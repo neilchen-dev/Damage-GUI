@@ -15,7 +15,7 @@ dist/damage_gui_*.py
 dist/evaluate_v2.py
 dist/real_rbf_aim_experiment.py
 
-# PyInstaller build outputs (source files under dist/ are retained)
+# PyInstaller build outputs
 build/
 dist/build/
 dist/dist/

@@ -50,7 +50,7 @@ from matplotlib import font_manager, ticker
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-from aim_optimization import optimize_aim, AimOptimizationResult
+from damage_gui.aim_optimization import AimOptimizationResult, optimize_aim
 
 # 毁伤强度：单色调科学渐变，浅色=未毁伤，深蓝=完全毁伤（对色弱友好，无廉价感）
 DAMAGE_CMAP = "YlGnBu"
