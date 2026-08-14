@@ -62,6 +62,31 @@ python -m unittest discover -s tests -v
 
 The tests cover dispersion conversions, probability-kernel normalization, zero-dispersion behavior, and core evaluation metrics.
 
+## GUI
+
+The Tkinter interface supports data-directory selection, model training/loading, condition input, field visualization, CSV/PNG export, and aim-point optimization.
+
+![Damage field prediction GUI](examples/screenshots/gui.png)
+
+## Example result
+
+The following result was regenerated from the local F-level simulation dataset using the default seeded 80/20 hold-out split. The representative held-out condition is `h=1`, `v=300`, `deg=30`.
+
+| Evaluation scope | RMSE | MAE | R2 | Mean relative error | P95 hybrid error |
+|---|---:|---:|---:|---:|---:|
+| Overall field | 0.0013 | 0.0001 | 0.9878 | — | — |
+| ROI | 0.0071 | 0.0017 | 0.9864 | — | — |
+| Main damage area (`damage > 0.05`) | 0.0203 | 0.0125 | 0.9533 | 8.40% | 17.60% |
+
+![F-level held-out prediction: true field, prediction, and signed error](examples/results/f_prediction.png)
+
+The source CSV and full result summary are available in [`examples/results`](examples/results). Reproduce them locally with:
+
+```powershell
+$env:PYTHONPATH = "src"
+python scripts/generate_results.py --data-dir path\to\data --level F
+```
+
 ## Build
 
 From the repository root, run:
