@@ -1,47 +1,51 @@
-# Data-Driven Damage Field Prediction
+# 基于数据驱动的毁伤场快速预测系统
 
-A Python desktop tool for reconstructing 2D damage fields from simulation data under varying operating conditions. It combines a field-level RBF surrogate model, robust evaluation metrics, and a Tkinter GUI for prediction, visualization, and aim-point optimization.
+这是一个面向仿真毁伤数据的 Python 桌面工具：根据飞行/撞击工况重建二维毁伤场，并提供精度评估、可视化和瞄准点优化能力。
 
-## Problem
+## 问题与目标
 
-The input is a flight/impact condition `(h, v, deg)` plus a damage level (`F`, `M`, or `P`). The output is a continuous `473 x 473` damage field rather than a single scalar prediction.
+输入为工况参数 `(h, v, deg)` 与毁伤等级（`F`、`M`、`P`），输出为连续的 `473 × 473` 二维毁伤场，而非单一数值。
 
-Direct pixel-wise interpolation can blur or duplicate patterns when a damage field moves across the plane. This project separates pattern shape from spatial translation before interpolation.
+由于毁伤图案会随工况发生空间位移，直接逐像素插值容易产生图案淡化或重影。本项目将图案形状与空间平移分离后分别建模，以提升场重建质量。
 
-## Method
+## 方法流程
 
 ```text
-Simulation DamageMatrix files
-        -> bilateral denoising
-        -> centroid extraction and alignment
-        -> RBF interpolation in (h, v, deg) space
-        -> centroid restoration
-        -> predicted 2D damage field
-        -> metrics, visualization, and aim-point optimization
+仿真 DamageMatrix 数据
+        → 双边滤波降噪
+        → 质心提取与对齐
+        → 在 (h, v, deg) 空间进行 RBF 插值
+        → 质心恢复
+        → 二维毁伤场预测
+        → 指标评估、可视化与瞄准优化
 ```
 
-- Bilateral filtering reduces Monte Carlo noise while preserving sharp damage peaks.
-- Centroid alignment decouples spatial translation from shape interpolation and reduces ghosting.
-- RBF interpolation reconstructs the full field over the low-dimensional condition space.
-- Evaluation includes RMSE, MAE, R2, damage-area ratio, relative error, and hybrid error metrics.
-- Aim-point optimization convolves the damage field with a CEP or REP/DEP probability kernel.
+- 使用双边滤波降低蒙特卡洛噪声，并尽量保留毁伤峰值和边缘。
+- 使用质心对齐，将图案的形状变化与平移变化解耦，减少插值重影。
+- 使用 RBF 插值在低维工况空间中重建高维二维场。
+- 提供 RMSE、MAE、R²、毁伤面积比、相对误差和混合误差等指标。
+- 支持基于 CEP 或 REP/DEP 概率散布模型的瞄准点优化。
 
-## Repository layout
+## 项目结构
 
 ```text
 .
 ├── src/damage_gui/
-│   ├── app.py                 # GUI, data loading, RBF model, and evaluation
-│   └── aim_optimization.py    # Standalone aim-point optimization mathematics
-├── scripts/build.bat          # PyInstaller build entry point
-├── tests/                     # Reproducible numerical and metric tests
+│   ├── app.py                 # GUI、数据读取、RBF 模型与精度评估
+│   └── aim_optimization.py    # 独立的瞄准点优化数学模块
+├── scripts/
+│   ├── build.bat              # 常规 PyInstaller 构建脚本
+│   ├── build_release.bat      # 轻量版 Windows 发布构建脚本
+│   └── generate_results.py    # 从本地数据复现示例结果
+├── tests/                     # 可重复运行的数值与指标测试
+├── examples/                  # GUI 截图与真实示例结果
 ├── requirements.txt
 └── README.md
 ```
 
-The original simulation matrices, trained model files, virtual environments, and packaged executables are intentionally excluded from Git. Supply a local `data/` directory containing files named `DamageMatrix_<F|M|P>_h_<h>_v_<v>_deg_<deg>` before training.
+仿真矩阵、训练模型、虚拟环境和打包产物均不纳入 Git。训练前请准备本地 `data/` 目录，文件名需符合：`DamageMatrix_<F|M|P>_h_<h>_v_<v>_deg_<deg>`。
 
-## Quick start
+## 快速开始
 
 ```powershell
 python -m venv .venv
@@ -51,58 +55,60 @@ $env:PYTHONPATH = "src"
 python -m damage_gui.app
 ```
 
-In the GUI, select the local data directory, choose a damage level, train or load a model, then enter a condition to generate a field prediction.
+启动后，在 GUI 中选择本地数据目录、毁伤等级，训练或加载模型后即可输入工况进行预测。
 
-## Tests
+## 图形界面
 
-```powershell
-$env:PYTHONPATH = "src"
-python -m unittest discover -s tests -v
-```
+GUI 支持数据目录选择、模型训练/加载、工况输入、毁伤场可视化、CSV/PNG 导出以及瞄准点优化。
 
-The tests cover dispersion conversions, probability-kernel normalization, zero-dispersion behavior, and core evaluation metrics.
+![毁伤场预测 GUI](examples/screenshots/gui.png)
 
-## GUI
+## 真实示例结果
 
-The Tkinter interface supports data-directory selection, model training/loading, condition input, field visualization, CSV/PNG export, and aim-point optimization.
+下图和指标由本机 F 级仿真数据重新生成，采用默认固定随机种子进行 80/20 留出验证。代表性留出工况为 `h=1`、`v=300`、`deg=30`。
 
-![Damage field prediction GUI](examples/screenshots/gui.png)
-
-## Example result
-
-The following result was regenerated from the local F-level simulation dataset using the default seeded 80/20 hold-out split. The representative held-out condition is `h=1`, `v=300`, `deg=30`.
-
-| Evaluation scope | RMSE | MAE | R2 | Mean relative error | P95 hybrid error |
+| 评价范围 | RMSE | MAE | R² | 平均相对误差 | P95 混合误差 |
 |---|---:|---:|---:|---:|---:|
-| Overall field | 0.0013 | 0.0001 | 0.9878 | — | — |
-| ROI | 0.0071 | 0.0017 | 0.9864 | — | — |
-| Main damage area (`damage > 0.05`) | 0.0203 | 0.0125 | 0.9533 | 8.40% | 17.60% |
+| 全场 | 0.0013 | 0.0001 | 0.9878 | — | — |
+| ROI 区域 | 0.0071 | 0.0017 | 0.9864 | — | — |
+| 主要毁伤区（`damage > 0.05`） | 0.0203 | 0.0125 | 0.9533 | 8.40% | 17.60% |
 
-![F-level held-out prediction: true field, prediction, and signed error](examples/results/f_prediction.png)
+![F 级留出工况：真实毁伤场、预测毁伤场与带符号误差](examples/results/f_prediction.png)
 
-The source CSV and full result summary are available in [`examples/results`](examples/results). Reproduce them locally with:
+完整指标 CSV 与结果摘要见 [`examples/results`](examples/results)。如需复现：
 
 ```powershell
 $env:PYTHONPATH = "src"
 python scripts/generate_results.py --data-dir path\to\data --level F
 ```
 
-## Build
+## 测试
 
-From the repository root, run:
+```powershell
+$env:PYTHONPATH = "src"
+python -m unittest discover -s tests -v
+```
+
+测试覆盖了散布参数转换、概率核归一化、零散布极限行为和核心评价指标。
+
+## 构建与发布
+
+常规构建：
 
 ```powershell
 .\scripts\build.bat
 ```
 
-The build script creates a PyInstaller application under `dist/DamageEfficiencyApp`. If local data or pre-trained `.joblib` files are present, it copies them into the package for deployment.
+轻量版 Windows 发布构建：
 
-## Lightweight release
+```powershell
+.\scripts\build_release.bat
+```
 
-`scripts/build_release.bat` creates a Windows `v1.0.0` package without simulation data or trained `.joblib` models. This keeps the download small and separates the application from local research data. After launching the application, select a compatible local `data/` directory in the GUI before training or prediction.
+轻量版不包含仿真训练数据和预训练 `.joblib` 模型文件，以减小下载体积。运行后请在 GUI 中选择本地兼容的 `data/` 目录。
 
-## Limitations and next steps
+## 当前限制与后续计划
 
-The current random hold-out split is useful for interpolation checks but can be optimistic for a regular condition grid. Stronger validation should hold out complete `h`, `deg`, or spatial-condition regions to assess interpolation across unseen conditions.
+当前采用随机留出验证，适合检查插值精度，但对规则工况网格的未知条件预测可能偏乐观。后续将增加按高度、速度、角度整层留出或区域留出的结构化验证。
 
-Training currently runs in the GUI process; a future worker-thread implementation would keep the interface responsive for larger datasets.
+当前训练运行在 GUI 进程中；后续将通过后台线程进一步提升大数据量场景下的界面响应性。
