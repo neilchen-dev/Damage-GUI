@@ -1,0 +1,40 @@
+# Python bytecode and local tooling
+__pycache__/
+*.py[cod]
+.codebuddy/
+dist/.venv_pack/
+dist/data/
+dist/*.joblib
+dist/*.spec
+dist/Damage_Prediction_GUI_ROI_relative05.py
+dist/PROJECT_CONTEXT.md
+dist/TASK*.md
+dist/aim_point_test*.py
+dist/compare_models.py
+dist/damage_gui_*.py
+dist/evaluate_v2.py
+dist/real_rbf_aim_experiment.py
+
+# PyInstaller build outputs (source files under dist/ are retained)
+build/
+dist/build/
+dist/dist/
+*.spec
+
+# Generated application artifacts and reports
+*.exe
+*.pkg
+*.pyz
+*.toc
+*.pyd
+*.dll
+*.zip
+*.csv
+*.png
+
+# Local environment and secrets
+.env
+.env.*
+*.key
+*.pem
+*.log
