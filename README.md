@@ -97,6 +97,10 @@ From the repository root, run:
 
 The build script creates a PyInstaller application under `dist/DamageEfficiencyApp`. If local data or pre-trained `.joblib` files are present, it copies them into the package for deployment.
 
+## Lightweight release
+
+`scripts/build_release.bat` creates a Windows `v1.0.0` package without simulation data or trained `.joblib` models. This keeps the download small and separates the application from local research data. After launching the application, select a compatible local `data/` directory in the GUI before training or prediction.
+
 ## Limitations and next steps
 
 The current random hold-out split is useful for interpolation checks but can be optimistic for a regular condition grid. Stronger validation should hold out complete `h`, `deg`, or spatial-condition regions to assess interpolation across unseen conditions.

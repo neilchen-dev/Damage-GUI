@@ -17,6 +17,7 @@ dist/real_rbf_aim_experiment.py
 
 # PyInstaller build outputs
 build/
+release/
 dist/build/
 dist/dist/
 *.spec
