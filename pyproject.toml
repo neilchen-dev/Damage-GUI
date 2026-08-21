@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "damage-gui"
+version = "2.0.0"
+description = "基于质心对齐 POD-RBF 降阶代理模型的二维毁伤场快速预测与效能评估系统"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "joblib>=1.3,<2",
+    "matplotlib>=3.8,<4",
+    "numpy>=1.26,<3",
+    "pandas>=2.1,<3",
+    "scikit-learn>=1.4,<2",
+    "scipy>=1.11,<2",
+]
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0,<7",
+]
+
+[project.scripts]
+damage-gui = "damage_gui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
