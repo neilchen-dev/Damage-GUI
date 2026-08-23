@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "damage-gui"
-version = "2.0.0"
+version = "2.1.0"
 description = "基于质心对齐 POD-RBF 降阶代理模型的二维毁伤场快速预测与效能评估系统"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,6 +25,28 @@ build = [
 
 [project.scripts]
 damage-gui = "damage_gui.app:main"
+damage-gui-cli = "damage_gui.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "scripts", "tests"]
+extend-exclude = ["build", "dist", "release", ".codebuddy"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # import order
+    "UP",  # pyupgrade（目标 py310 语法）
+    "B",   # bugbear 常见陷阱
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 脚本与测试需要先把 src 注入 sys.path 再导入项目包
+"scripts/*.py" = ["E402"]
+"tests/*.py" = ["E402"]

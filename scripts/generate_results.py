@@ -36,9 +36,10 @@ def main() -> None:
         CONFIG,
     )
     figure.savefig(args.output_dir / f"{args.level.lower()}_prediction.png", dpi=160)
-    bundle.accuracy_report.to_csv(args.output_dir / f"{args.level.lower()}_accuracy.csv", index=False)
+    bundle.accuracy_report.to_csv(
+        args.output_dir / f"{args.level.lower()}_accuracy.csv", index=False
+    )
 
-    focus_scope = f"damage_gt_{CONFIG.relative_error_threshold:.2f}"
     smoothed = bundle.accuracy_report
     if "field" in smoothed.columns:
         smoothed = smoothed[smoothed["field"] == "smoothed"]
@@ -48,7 +49,8 @@ def main() -> None:
         "",
         "Generated from the local simulation dataset using the default seeded 80/20 split.",
         "",
-        f"Representative held-out condition: `h={test_condition.h:g}, v={test_condition.v:g}, deg={test_condition.deg:g}`.",
+        f"Representative held-out condition: "
+        f"`h={test_condition.h:g}, v={test_condition.v:g}, deg={test_condition.deg:g}`.",
         "",
         "| Scope | RMSE | MAE | R2 | Mean relative error | P95 hybrid error |",
         "|---|---:|---:|---:|---:|---:|",
@@ -60,7 +62,8 @@ def main() -> None:
             f"| {row['scope']} | {row['RMSE']:.4f} | {row['MAE']:.4f} | {row['R2']:.4f} | "
             f"{row['MeanRelativeError']:.2%} | {row['P95HybridError']:.2%} |"
         )
-    (args.output_dir / f"{args.level.lower()}_result.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    result_path = args.output_dir / f"{args.level.lower()}_result.md"
+    result_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

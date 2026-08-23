@@ -4,10 +4,9 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from scipy.ndimage import gaussian_filter
-from scipy.ndimage import zoom
+from scipy.ndimage import gaussian_filter, zoom
 
-from damage_gui.config import Config, CONFIG
+from damage_gui.config import CONFIG, Config
 
 
 def bilateral_filter(

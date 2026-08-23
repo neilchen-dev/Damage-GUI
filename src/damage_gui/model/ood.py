@@ -103,7 +103,7 @@ class OODDetector:
         self.cond_lo: np.ndarray | None = None
         self.cond_span: np.ndarray | None = None
 
-    def fit(self, conditions: np.ndarray) -> "OODDetector":
+    def fit(self, conditions: np.ndarray) -> OODDetector:
         """conditions: (n, d) 训练工况（通常 d=3）。"""
         conditions = np.asarray(conditions, dtype=np.float64)
         if conditions.ndim != 2 or conditions.shape[0] == 0:

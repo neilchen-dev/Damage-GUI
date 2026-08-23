@@ -18,7 +18,7 @@ from sklearn.metrics import (
     r2_score,
 )
 
-from damage_gui.config import Config, CONFIG
+from damage_gui.config import CONFIG, Config
 
 # 空间场指标列名（统一出现在指标报告中，非空间行置 NaN）
 SPATIAL_KEYS = (

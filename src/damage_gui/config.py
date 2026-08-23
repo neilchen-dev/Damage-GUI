@@ -1,11 +1,19 @@
 """全局配置：模型、预处理、评估与 UI 参数集中管理。"""
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, fields
-from typing import Any, Mapping
+from typing import Any
 
 ProgressCallback = Callable[[int, int, str], None]
+
+# 工况输入的合法范围与 Spinbox 步长：(下限, 上限, 步长)。
+# GUI 输入控件与批量预测 CSV 校验共用同一份范围定义。
+CONDITION_LIMITS: dict[str, tuple[float, float, float]] = {
+    "h": (0.0, 500.0, 5.0),
+    "v": (0.0, 1000.0, 10.0),
+    "deg": (0.0, 90.0, 1.0),
+}
 
 
 @dataclass(frozen=True)
@@ -114,7 +122,7 @@ class Config:
     ui_busy: str = "#B45309"
 
     @classmethod
-    def from_mapping(cls, values: Mapping[str, Any] | None) -> "Config":
+    def from_mapping(cls, values: Mapping[str, Any] | None) -> Config:
         """从模型包等外部映射恢复配置，忽略未来或旧版本的未知字段。"""
         if not values:
             return cls()
@@ -123,7 +131,7 @@ class Config:
 
 
 CONFIG = Config()
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 APP_TITLE = "基于数据驱动的毁伤效能快速评估方法研究"
 
 # 毁伤强度：单色调科学渐变，浅色=未毁伤，深蓝=完全毁伤（对色弱友好，无廉价感）

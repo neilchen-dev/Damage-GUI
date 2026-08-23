@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from damage_gui.config import Config, CONFIG
+from damage_gui.config import CONFIG, Config
 from damage_gui.data.preprocessing import (
     coordinate_axes,
     evaluation_fields,

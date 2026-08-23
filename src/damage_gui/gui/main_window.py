@@ -1,37 +1,29 @@
 """Tkinter 主窗口：训练编排（后台线程）、预测、可视化与瞄准优化。
 
-训练在后台线程执行（P2 性能优化），通过队列 + root.after 轮询更新进度，
-支持随时取消；预测与瞄准优化在主线程（单次计算耗时短）。
+训练与批量预测经 TaskManager 在后台线程执行（GUI 不直接持有线程对象），
+事件经队列 + root.after 轮询回到主线程更新界面，支持随时取消；
+预测与瞄准优化在主线程（单次计算耗时短）。
 """
 from __future__ import annotations
 
-import queue
-import threading
+import logging
 import time
-import traceback
-from pathlib import Path
-
-import joblib
-import numpy as np
-import pandas as pd
 import tkinter as tk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from damage_gui.config import APP_TITLE, Config, CONFIG
+import numpy as np
+import pandas as pd
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+
+from damage_gui.batch.runner import BatchReport, run_batch
+from damage_gui.batch.schema import parse_batch_csv
+from damage_gui.config import APP_TITLE, CONDITION_LIMITS, CONFIG, Config
 from damage_gui.data.loader import Condition, DamageDataManager, read_damage_matrix
 from damage_gui.data.preprocessing import coordinate_axes, evaluation_fields
+from damage_gui.errors import DataValidationError, TaskStateError
 from damage_gui.evaluation.metrics import extract_core_metrics, metric_row
-from damage_gui.model.bundle import DamageModelService, ModelBundle, TrainingCancelled
-from damage_gui.model.ood import OODReport
-from damage_gui.model.validation import VALIDATION_LABELS
-from damage_gui.optimization.aim import AimOptimizationResult, optimize_aim
-from damage_gui.visualization.plots import (
-    render_aim_optimization,
-    render_full_prediction,
-    render_heatmaps,
-)
 from damage_gui.gui.presentation import (
     MODEL_TYPE_CHOICES,
     VALIDATION_CHOICES,
@@ -40,23 +32,34 @@ from damage_gui.gui.presentation import (
 )
 from damage_gui.gui.resources import app_base_dir, resolve_icon_paths
 from damage_gui.gui.widgets import bind_autowrap, rounded_rect
+from damage_gui.logging_setup import setup_logging
+from damage_gui.model.bundle import DamageModelService, ModelBundle
+from damage_gui.model.ood import OODReport
+from damage_gui.model.registry import load_model, save_model
+from damage_gui.model.validation import VALIDATION_LABELS
+from damage_gui.optimization.aim import AimOptimizationResult, optimize_aim
+from damage_gui.storage.db import resolve_db_path
+from damage_gui.storage.repositories import JobRepository
+from damage_gui.tasks import TaskEvent, TaskManager, TaskStatus
+from damage_gui.visualization.plots import (
+    render_aim_optimization,
+    render_full_prediction,
+    render_heatmaps,
+)
 
 
 class DamagePredictionGUI:
-    # 工况输入的合法范围与 Spinbox 步长：(下限, 上限, 步长)。
-    # 箭头微调受 from_/to 约束，手动键入在 _current_condition 中二次校验，
+    # 工况输入的合法范围与 Spinbox 步长（config.CONDITION_LIMITS 与批量 CSV
+    # 校验共用同一份定义）；手动键入在 _current_condition 中二次校验，
     # 防止非法字符或极端负数进入后端插值器导致崩溃。
-    CONDITION_LIMITS: dict[str, tuple[float, float, float]] = {
-        "h": (0.0, 500.0, 5.0),
-        "v": (0.0, 1000.0, 10.0),
-        "deg": (0.0, 90.0, 1.0),
-    }
+    CONDITION_LIMITS = CONDITION_LIMITS
 
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(APP_TITLE)
         self.root.geometry("1600x920")
         self.root.minsize(1280, 780)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.data_dir_var = tk.StringVar(value=str(app_base_dir() / "data"))
         self.level_var = tk.StringVar(value="F")
@@ -86,10 +89,13 @@ class DamagePredictionGUI:
         self.current_aim_result: AimOptimizationResult | None = None
         self.current_value_field: np.ndarray | None = None
 
-        # 后台训练线程状态
-        self._train_thread: threading.Thread | None = None
-        self._train_queue: queue.Queue | None = None
-        self._cancel_requested = False
+        # 批量预测输入 CSV 路径
+        self.batch_csv_var = tk.StringVar(value="")
+
+        # 后台任务管理：训练 / 批量预测统一走 TaskManager
+        self.task_manager = TaskManager()
+        self._logger = logging.getLogger("damage_gui.gui")
+        self._db_path = resolve_db_path()
 
         # 耗时统计与 OOD 报告
         self._last_train_time: float | None = None
@@ -98,7 +104,9 @@ class DamagePredictionGUI:
 
         # 结果区双标签页画布与动画状态
         self.figures: dict[str, Figure | None] = {"triple": None, "full": None, "aim": None}
-        self.canvases: dict[str, FigureCanvasTkAgg | None] = {"triple": None, "full": None, "aim": None}
+        self.canvases: dict[str, FigureCanvasTkAgg | None] = {
+            "triple": None, "full": None, "aim": None,
+        }
         self._busy_animating = False
         self._anim_phase = 0
         self._syncing_fields = False
@@ -258,7 +266,10 @@ class DamagePredictionGUI:
         )
         style.map(
             "Primary.TButton",
-            background=[("active", CONFIG.ui_primary_dark), ("pressed", CONFIG.ui_primary_dark)],
+            background=[
+                ("active", CONFIG.ui_primary_dark),
+                ("pressed", CONFIG.ui_primary_dark),
+            ],
             foreground=[("disabled", "#dfe7ed"), ("!disabled", "#ffffff")],
         )
         style.configure(
@@ -450,7 +461,10 @@ class DamagePredictionGUI:
 
         card, box, bg = self._make_card(left, "模型操作")
         card.grid(row=0, column=0, sticky="ew")
-        tk.Label(box, text="数据目录", bg=bg, fg=CONFIG.ui_muted, font=("Microsoft YaHei", 9)).pack(anchor="w")
+        tk.Label(
+            box, text="数据目录", bg=bg, fg=CONFIG.ui_muted,
+            font=("Microsoft YaHei", 9),
+        ).pack(anchor="w")
         # 路径选择器紧凑化：输入框与浏览按钮横向并排，节省纵向空间
         dir_row = tk.Frame(box, bg=bg)
         dir_row.pack(fill="x", pady=(4, 0))
@@ -461,7 +475,10 @@ class DamagePredictionGUI:
             dir_row, text="浏览…", command=self.on_browse_data,
             style="Ghost.TButton", width=6,
         ).pack(side="left", padx=(6, 0))
-        tk.Label(box, text="毁伤等级", bg=bg, fg=CONFIG.ui_muted, font=("Microsoft YaHei", 9)).pack(anchor="w", pady=(12, 0))
+        tk.Label(
+            box, text="毁伤等级", bg=bg, fg=CONFIG.ui_muted,
+            font=("Microsoft YaHei", 9),
+        ).pack(anchor="w", pady=(12, 0))
         ttk.Combobox(
             box,
             textvariable=self.level_var,
@@ -471,7 +488,10 @@ class DamagePredictionGUI:
         ).pack(fill="x", pady=(4, 0))
 
         # 模型类型：RBF 插值场 / POD-RBF 降阶模型
-        tk.Label(box, text="模型类型", bg=bg, fg=CONFIG.ui_muted, font=("Microsoft YaHei", 9)).pack(anchor="w", pady=(12, 0))
+        tk.Label(
+            box, text="模型类型", bg=bg, fg=CONFIG.ui_muted,
+            font=("Microsoft YaHei", 9),
+        ).pack(anchor="w", pady=(12, 0))
         ttk.Combobox(
             box,
             textvariable=self.model_type_var,
@@ -492,7 +512,10 @@ class DamagePredictionGUI:
         ).pack(side="right")
 
         # 验证方式：随机留出 / 整层留出 / 角落留出
-        tk.Label(box, text="验证方式", bg=bg, fg=CONFIG.ui_muted, font=("Microsoft YaHei", 9)).pack(anchor="w", pady=(12, 0))
+        tk.Label(
+            box, text="验证方式", bg=bg, fg=CONFIG.ui_muted,
+            font=("Microsoft YaHei", 9),
+        ).pack(anchor="w", pady=(12, 0))
         ttk.Combobox(
             box,
             textvariable=self.validation_var,
@@ -506,16 +529,24 @@ class DamagePredictionGUI:
         buttons = tk.Frame(box, bg=bg)
         buttons.pack(fill="x", pady=(16, 0))
         buttons.columnconfigure((0, 1), weight=1)
-        self.train_button = ttk.Button(buttons, text="训练模型", command=self.on_train, style="Ghost.TButton")
+        self.train_button = ttk.Button(
+            buttons, text="训练模型", command=self.on_train, style="Ghost.TButton"
+        )
         self.train_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         self.cancel_button = ttk.Button(
             buttons, text="取消训练", command=self.on_cancel_training,
             style="Secondary.TButton", state="disabled",
         )
         self.cancel_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
-        self.save_button = ttk.Button(buttons, text="保存模型", command=self.on_save_model, style="Secondary.TButton")
+        self.save_button = ttk.Button(
+            buttons, text="保存模型", command=self.on_save_model,
+            style="Secondary.TButton",
+        )
         self.save_button.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(10, 0))
-        self.load_button = ttk.Button(buttons, text="加载模型...", command=self.on_load_model, style="Secondary.TButton")
+        self.load_button = ttk.Button(
+            buttons, text="加载模型...", command=self.on_load_model,
+            style="Secondary.TButton",
+        )
         self.load_button.grid(row=1, column=1, sticky="ew", padx=(6, 0), pady=(10, 0))
 
         card2, box2, bg2 = self._make_card(left, "工况输入")
@@ -528,17 +559,56 @@ class DamagePredictionGUI:
             lo, hi, step = self.CONDITION_LIMITS[key]
             self._build_condition_field(box2, bg2, icon, label, variable, lo, hi, step)
 
-        self.predict_button = ttk.Button(box2, text="开始预测", command=self.on_predict, style="Accent.TButton")
+        self.predict_button = ttk.Button(
+            box2, text="开始预测", command=self.on_predict, style="Accent.TButton"
+        )
         self.predict_button.pack(fill="x", pady=(14, 0))
         export_row = tk.Frame(box2, bg=bg2)
         export_row.pack(fill="x", pady=(10, 0))
         export_row.columnconfigure((0, 1), weight=1)
-        ttk.Button(export_row, text="导出 CSV", command=self.on_export_csv, style="Ghost.TButton").grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ttk.Button(export_row, text="导出 PNG", command=self.on_export_png, style="Ghost.TButton").grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        ttk.Button(
+            export_row, text="导出 CSV", command=self.on_export_csv,
+            style="Ghost.TButton",
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ttk.Button(
+            export_row, text="导出 PNG", command=self.on_export_png,
+            style="Ghost.TButton",
+        ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
+        # 批量预测卡片：CSV 批量工况 → 后台任务 → 结果 CSV + SQLite 追溯
+        card_b, box_b, bg_b = self._make_card(left, "批量预测")
+        card_b.grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        tk.Label(
+            box_b, text="输入 CSV（列: job_id,h,v,deg,level）", bg=bg_b,
+            fg=CONFIG.ui_muted, font=("Microsoft YaHei", 9),
+        ).pack(anchor="w")
+        batch_row = tk.Frame(box_b, bg=bg_b)
+        batch_row.pack(fill="x", pady=(4, 0))
+        ttk.Entry(batch_row, textvariable=self.batch_csv_var, style="App.TEntry").pack(
+            side="left", fill="x", expand=True
+        )
+        ttk.Button(
+            batch_row, text="浏览…", command=self.on_browse_batch_csv,
+            style="Ghost.TButton", width=6,
+        ).pack(side="left", padx=(6, 0))
+        batch_buttons = tk.Frame(box_b, bg=bg_b)
+        batch_buttons.pack(fill="x", pady=(10, 0))
+        batch_buttons.columnconfigure((0, 1), weight=1)
+        self.batch_button = ttk.Button(
+            batch_buttons, text="运行批量预测", command=self.on_run_batch,
+            style="Secondary.TButton",
+        )
+        self.batch_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.cancel_batch_button = ttk.Button(
+            batch_buttons, text="取消批量",
+            command=lambda: self.task_manager.cancel("batch"),
+            style="Secondary.TButton", state="disabled",
+        )
+        self.cancel_batch_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
         # 瞄准优化卡片
         card3, box3, bg3 = self._make_card(left, "瞄准优化")
-        card3.grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        card3.grid(row=3, column=0, sticky="ew", pady=(14, 0))
 
         tk.Label(box3, text="散布模式", bg=bg3, fg=CONFIG.ui_muted,
                  font=("Microsoft YaHei", 9)).pack(anchor="w")
@@ -617,8 +687,10 @@ class DamagePredictionGUI:
         field.pack(fill="x", pady=(0, 12))
         head = tk.Frame(field, bg=bg)
         head.pack(fill="x")
-        tk.Label(head, text=icon, bg=bg, fg=CONFIG.ui_primary, font=("Microsoft YaHei", 10)).pack(side="left")
-        tk.Label(head, text=f" {label}", bg=bg, fg=CONFIG.ui_muted, font=("Microsoft YaHei", 9)).pack(side="left")
+        tk.Label(head, text=icon, bg=bg, fg=CONFIG.ui_primary,
+                 font=("Microsoft YaHei", 10)).pack(side="left")
+        tk.Label(head, text=f" {label}", bg=bg, fg=CONFIG.ui_muted,
+                 font=("Microsoft YaHei", 9)).pack(side="left")
         ttk.Spinbox(
             field,
             textvariable=variable,
@@ -639,7 +711,8 @@ class DamagePredictionGUI:
 
         tk.Label(
             right,
-            text="流程：选择数据目录与等级 → 选择模型类型与验证方式 → 训练或加载模型 → 输入工况开始预测 → 查看热力图、指标与可信度 → 导出结果",
+            text="流程：选择数据目录与等级 → 选择模型类型与验证方式 → 训练或加载模型 "
+            "→ 输入工况开始预测 → 查看热力图、指标与可信度 → 导出结果",
             bg=CONFIG.ui_bg,
             fg=CONFIG.ui_muted,
             font=("Microsoft YaHei", 9),
@@ -675,13 +748,22 @@ class DamagePredictionGUI:
         card0.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         state_row = tk.Frame(box0, bg=bg0)
         state_row.pack(pady=(2, 0))
-        self.status_dot = tk.Label(state_row, text="●", bg=bg0, fg=CONFIG.ui_muted, font=("Microsoft YaHei", 11))
+        self.status_dot = tk.Label(
+            state_row, text="●", bg=bg0, fg=CONFIG.ui_muted,
+            font=("Microsoft YaHei", 11),
+        )
         self.status_dot.pack(side="left", padx=(0, 6))
-        self.state_label = tk.Label(state_row, text="就绪", bg=bg0, fg=CONFIG.ui_text, font=("Microsoft YaHei", 18, "bold"))
+        self.state_label = tk.Label(
+            state_row, text="就绪", bg=bg0, fg=CONFIG.ui_text,
+            font=("Microsoft YaHei", 18, "bold"),
+        )
         self.state_label.pack(side="left")
         progress_row = tk.Frame(box0, bg=bg0)
         progress_row.pack(fill="x", pady=(8, 0))
-        self.progress_percent = tk.Label(progress_row, text="0%", bg=bg0, fg=CONFIG.ui_primary, font=("Microsoft YaHei", 9), width=4, anchor="e")
+        self.progress_percent = tk.Label(
+            progress_row, text="0%", bg=bg0, fg=CONFIG.ui_primary,
+            font=("Microsoft YaHei", 9), width=4, anchor="e",
+        )
         self.progress_percent.pack(side="right", padx=(4, 0))
         self.progress_var = tk.DoubleVar(value=0.0)
         self.progress_bar = ttk.Progressbar(
@@ -707,13 +789,25 @@ class DamagePredictionGUI:
         # 关键指标卡：核心大字指标在卡片正中放大突出
         card, box, bg = self._make_card(report, "关键指标报告")
         card.grid(row=0, column=1, sticky="nsew", padx=(0, 10))
-        self.p95_value = tk.Label(box, text="--", bg=bg, fg=CONFIG.ui_text, font=("Microsoft YaHei", 22, "bold"))
+        self.p95_value = tk.Label(
+            box, text="--", bg=bg, fg=CONFIG.ui_text,
+            font=("Microsoft YaHei", 22, "bold"),
+        )
         self.p95_value.pack(pady=(2, 0))
-        self.p95_status = tk.Label(box, text="P95 混合误差", bg=bg, fg=CONFIG.ui_muted, font=("Microsoft YaHei", 9))
+        self.p95_status = tk.Label(
+            box, text="P95 混合误差", bg=bg, fg=CONFIG.ui_muted,
+            font=("Microsoft YaHei", 9),
+        )
         self.p95_status.pack()
-        self.meanre_value = tk.Label(box, text="--", bg=bg, fg=CONFIG.ui_text, font=("Microsoft YaHei", 14, "bold"))
+        self.meanre_value = tk.Label(
+            box, text="--", bg=bg, fg=CONFIG.ui_text,
+            font=("Microsoft YaHei", 14, "bold"),
+        )
         self.meanre_value.pack(pady=(10, 0))
-        self.meanre_status = tk.Label(box, text="平均相对误差", bg=bg, fg=CONFIG.ui_muted, font=("Microsoft YaHei", 9))
+        self.meanre_status = tk.Label(
+            box, text="平均相对误差", bg=bg, fg=CONFIG.ui_muted,
+            font=("Microsoft YaHei", 9),
+        )
         self.meanre_status.pack()
 
         card2, box2, bg2 = self._make_card(report, "输入配置摘要")
@@ -812,12 +906,18 @@ class DamagePredictionGUI:
 
     def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
-        for name in ("train_button", "predict_button", "save_button", "load_button", "optimize_button"):
+        for name in (
+            "train_button", "predict_button", "save_button", "load_button",
+            "optimize_button", "batch_button",
+        ):
             button = getattr(self, name, None)
             if button is not None:
                 button.configure(state=state)
+        cancel_state = "normal" if busy else "disabled"
         if hasattr(self, "cancel_button"):
-            self.cancel_button.configure(state="normal" if busy else "disabled")
+            self.cancel_button.configure(state=cancel_state)
+        if hasattr(self, "cancel_batch_button"):
+            self.cancel_batch_button.configure(state=cancel_state)
 
     def _set_data_dir(self, data_dir: str, config: Config | None = None) -> None:
         self.data_dir_var.set(data_dir)
@@ -922,13 +1022,28 @@ class DamagePredictionGUI:
             lines.append(
                 f"POD 累计解释方差: {model.explained_variance:.2%} (K={model.n_components_used})"
             )
-        lines.append(f"验证方式: {VALIDATION_LABELS.get(bundle.validation_mode, bundle.validation_mode)}")
+        lines.append(
+            f"验证方式: "
+            f"{VALIDATION_LABELS.get(bundle.validation_mode, bundle.validation_mode)}"
+        )
         lines.append(f"RBF 核: {config.rbf_kernel}")
         lines.append(f"质心对齐: {'开启' if config.align_patterns else '关闭'}")
         lines.append(f"降噪: 双边滤波 σs={config.denoise_sigma_spatial:g}")
         lines.append(
             f"评估口径: Raw + Smoothed (σ={config.eval_smoothing_sigma:g}) 双口径"
         )
+        metadata = getattr(bundle, "metadata", None)
+        if metadata is not None:
+            lines.append(f"模型 ID: {metadata.model_id[:8]}")
+            lines.append(
+                f"版本: 软件 {metadata.app_version} | 元数据 schema "
+                f"{metadata.schema_version} | 模型格式 {metadata.model_format_version}"
+            )
+            lines.append(f"训练数据指纹: {metadata.training_data_hash[:19]}…")
+            if metadata.code_commit:
+                lines.append(f"训练时 commit: {metadata.code_commit}")
+        else:
+            lines.append("元数据: 旧版模型（无追溯信息）")
         if self._last_train_time is not None:
             lines.append(f"训练耗时: {self._last_train_time:.1f} s")
         if self._last_predict_time is not None:
@@ -977,15 +1092,12 @@ class DamagePredictionGUI:
         self._set_data_dir(selected)
         self._set_status(f"已选择数据目录: {selected}")
 
-    # ---------- 训练（后台线程） ----------
+    # ---------- 训练（后台任务） ----------
 
     def on_train(self) -> None:
         try:
             if self.service is None:
                 raise RuntimeError("数据服务未初始化")
-            if self._train_thread is not None and self._train_thread.is_alive():
-                raise RuntimeError("训练正在进行中，请先取消或等待完成")
-
             level = self.level_var.get().strip().upper()
             model_type = self._selected_model_type()
             validation_mode = self._selected_validation_mode()
@@ -996,81 +1108,86 @@ class DamagePredictionGUI:
             if pod_components < 2:
                 raise ValueError("POD 主成分数至少为 2")
 
-            self._cancel_requested = False
+            service = self.service
+
+            def work(ctx) -> ModelBundle:
+                return service.train_bundle(
+                    level,
+                    validation_mode=validation_mode,
+                    model_type=model_type,
+                    pod_n_components=pod_components,
+                    progress=ctx.report_progress,
+                    cancel_check=ctx.cancel_check,
+                )
+
+            self.task_manager.submit("training", work)
             self._set_busy(True)
             self._set_status(
                 f"正在后台训练等级 {level} 模型（{self.model_type_var.get()}，"
                 f"{self.validation_var.get()}），界面仍可操作，请稍候...",
                 kind="busy",
             )
-
-            train_queue: queue.Queue = queue.Queue()
-
-            def report_progress(done: int, total: int, stage: str) -> None:
-                train_queue.put(("progress", done, total, stage))
-
-            def worker() -> None:
-                try:
-                    bundle = self.service.train_bundle(
-                        level,
-                        validation_mode=validation_mode,
-                        model_type=model_type,
-                        pod_n_components=pod_components,
-                        progress=report_progress,
-                        cancel_check=lambda: self._cancel_requested,
-                    )
-                    train_queue.put(("done", bundle))
-                except Exception as exc:  # noqa: BLE001 —— 线程边界统一上报
-                    train_queue.put(("error", exc))
-
-            self._train_queue = train_queue
-            self._train_thread = threading.Thread(target=worker, daemon=True)
-            self._train_thread.start()
-            self._poll_training()
+            self._poll_tasks()
+        except TaskStateError as exc:
+            self._show_error("训练启动失败", str(exc))
         except Exception as exc:
             self._set_busy(False)
             self._handle_error("训练失败", exc)
 
     def on_cancel_training(self) -> None:
-        if self._train_thread is None or not self._train_thread.is_alive():
-            return
-        self._cancel_requested = True
-        self._set_status("正在取消训练...", kind="busy")
+        if self.task_manager.cancel("training"):
+            self._set_status("正在取消训练...", kind="busy")
 
-    def _poll_training(self) -> None:
-        """主线程轮询训练队列：进度 / 完成 / 失败 / 取消。"""
-        train_queue = self._train_queue
-        if train_queue is None:
-            return
-        finished = False
-        try:
-            while True:
-                message = train_queue.get_nowait()
-                kind = message[0]
-                if kind == "progress":
-                    _kind, done, total, stage = message
-                    percent = done / total * 100.0 if total > 0 else 0.0
-                    self._set_progress(percent, stage)
-                elif kind == "done":
-                    self._finish_training(message[1])
-                    finished = True
-                elif kind == "error":
-                    exc = message[1]
-                    if isinstance(exc, TrainingCancelled):
-                        self._set_status("训练已取消。", kind="info")
-                    else:
-                        self._handle_error("训练失败", exc)
-                    finished = True
-        except queue.Empty:
-            pass
+    def _poll_tasks(self) -> None:
+        """主线程轮询任务事件：进度 / 完成 / 失败 / 取消（训练与批量预测）。"""
+        for event in self.task_manager.poll():
+            if event.type == "progress":
+                percent = (
+                    event.done / event.total * 100.0 if event.total > 0 else 0.0
+                )
+                self._set_progress(percent, event.stage)
+            elif event.type == "finished":
+                if event.kind == "training":
+                    self._on_training_finished(event)
+                elif event.kind == "batch":
+                    self._on_batch_finished(event)
 
-        if finished:
-            self._train_queue = None
-            self._train_thread = None
+        if self.task_manager.is_busy():
+            self.root.after(80, self._poll_tasks)
+        else:
             self._set_busy(False)
             self._set_progress(0.0, "等待任务...")
-            return
-        self.root.after(80, self._poll_training)
+
+    def _on_training_finished(self, event: TaskEvent) -> None:
+        if event.status == TaskStatus.SUCCESS:
+            self._finish_training(event.result)
+        elif event.status == TaskStatus.CANCELLED:
+            self._set_status("训练已取消。", kind="info")
+        else:
+            self._show_error("训练失败", event.error_summary or "未知错误")
+
+    def _record_training_to_db(self, bundle: ModelBundle) -> bool:
+        """训练结果写入 SQLite 追溯库；失败返回 False（已记录 ERROR 日志）。"""
+        if bundle.metadata is None:
+            return False
+        mean_re, p95_hybrid = extract_core_metrics(
+            bundle.accuracy_report, bundle.resolved_config()
+        )
+        details: dict = {
+            "validation_mode": bundle.validation_mode,
+            "train_time_seconds": round(bundle.train_time_seconds, 3),
+        }
+        if mean_re is not None:
+            details["mean_relative_error"] = float(mean_re)
+        if p95_hybrid is not None:
+            details["p95_hybrid_error"] = float(p95_hybrid)
+        job_id = JobRepository(self._db_path).record_training_run(
+            bundle.metadata,
+            input_source=bundle.data_dir,
+            duration_ms=int(bundle.train_time_seconds * 1000),
+            details=details,
+        )
+        return job_id is not None
 
     def _finish_training(self, bundle: ModelBundle) -> None:
         self.bundle = bundle
@@ -1098,17 +1215,22 @@ class DamagePredictionGUI:
         self._update_detail_card()
         self._update_advice_card(mean_re, p95_hybrid, "测试集")
 
+        db_note = ""
+        if not self._record_training_to_db(bundle):
+            db_note = "（警告：训练结果未写入 SQLite 追溯数据库，详见日志）"
+
         validation_note = ""
         if bundle.validation_mode != "random":
             validation_note = (
-                f" 验证方式: {VALIDATION_LABELS.get(bundle.validation_mode, bundle.validation_mode)}，"
+                f" 验证方式: "
+                f"{VALIDATION_LABELS.get(bundle.validation_mode, bundle.validation_mode)}，"
                 "指标来自未见工况的折外预测。"
             )
         self._set_status(
             f"训练完成: {bundle.level}（{getattr(bundle.model, 'model_name', 'RBF')}，"
             f"耗时 {bundle.train_time_seconds:.1f} s）。{core_summary}{validation_note}"
-            f"评估结果已保存为 {accuracy_path.name} 和 {condition_path.name}",
-            kind="ok",
+            f"评估结果已保存为 {accuracy_path.name} 和 {condition_path.name}{db_note}",
+            kind="ok" if not db_note else "info",
         )
 
     def on_save_model(self) -> None:
@@ -1123,8 +1245,12 @@ class DamagePredictionGUI:
             )
             if not output_path:
                 return
-            joblib.dump(self.bundle, output_path)
-            self._set_status(f"模型已保存: {output_path}", kind="ok")
+            save_model(self.bundle, output_path)
+            note = (
+                "" if getattr(self.bundle, "metadata", None) is not None
+                else "（旧版模型，未写入元数据 sidecar）"
+            )
+            self._set_status(f"模型已保存: {output_path}{note}", kind="ok")
         except Exception as exc:
             self._handle_error("保存模型失败", exc)
 
@@ -1136,9 +1262,7 @@ class DamagePredictionGUI:
             )
             if not model_path:
                 return
-            bundle = joblib.load(model_path)
-            if not isinstance(bundle, ModelBundle):
-                raise TypeError("模型文件格式不正确")
+            bundle = load_model(model_path)  # 损坏/不兼容时抛 ModelLoadError
             self.bundle = bundle
             self.level_var.set(bundle.level)
             self._last_train_time = getattr(bundle, "train_time_seconds", None) or None
@@ -1153,9 +1277,109 @@ class DamagePredictionGUI:
             self._update_summary_card(self.current_condition)
             self._update_detail_card()
             self._update_advice_card(mean_re, p95_hybrid, "测试集")
-            self._set_status(f"模型已加载: {model_path}", kind="ok")
+            legacy_note = (
+                "" if getattr(bundle, "metadata", None) is not None
+                else "（旧版模型：无元数据追溯信息）"
+            )
+            self._set_status(f"模型已加载: {model_path}{legacy_note}", kind="ok")
         except Exception as exc:
             self._handle_error("加载模型失败", exc)
+
+    # ---------- 批量预测（后台任务） ----------
+
+    def on_browse_batch_csv(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="选择批量预测输入 CSV",
+            filetypes=[("CSV File", "*.csv")],
+        )
+        if selected:
+            self.batch_csv_var.set(selected)
+
+    def on_run_batch(self) -> None:
+        try:
+            if self.bundle is None:
+                raise RuntimeError("请先训练或加载模型")
+            csv_path = self.batch_csv_var.get().strip()
+            if not csv_path:
+                raise DataValidationError("请先选择批量预测输入 CSV 文件")
+            parsed = parse_batch_csv(csv_path, default_level=self.bundle.level)
+            if not parsed.rows:
+                raise DataValidationError("输入 CSV 中没有可预测的合法行")
+
+            output_path = filedialog.asksaveasfilename(
+                title="保存批量预测结果",
+                defaultextension=".csv",
+                filetypes=[("CSV File", "*.csv")],
+                initialfile=Path(csv_path).stem + "_result.csv",
+            )
+            if not output_path:
+                return
+
+            bundle = self.bundle
+            service = self.service
+            data_manager = service.data_manager if service is not None else None
+            db_path = self._db_path
+
+            def work(ctx) -> BatchReport:
+                return run_batch(
+                    bundle,
+                    parsed.rows,
+                    invalid_rows=parsed.invalid,
+                    data_manager=data_manager,
+                    output_path=output_path,
+                    db_path=db_path,
+                    input_source=Path(csv_path).name,
+                    progress=ctx.report_progress,
+                    cancel_check=ctx.cancel_check,
+                )
+
+            self.task_manager.submit("batch", work)
+            self._set_busy(True)
+            invalid_note = (
+                f"，{len(parsed.invalid)} 行输入无效将标记为失败"
+                if parsed.invalid else ""
+            )
+            self._set_status(
+                f"正在后台批量预测 {parsed.total} 个工况{invalid_note}，请稍候...",
+                kind="busy",
+            )
+            self._poll_tasks()
+        except TaskStateError as exc:
+            self._show_error("批量预测启动失败", str(exc))
+        except DataValidationError as exc:
+            self._show_error("批量输入无效", str(exc))
+        except Exception as exc:
+            self._set_busy(False)
+            self._handle_error("批量预测失败", exc)
+
+    def _on_batch_finished(self, event: TaskEvent) -> None:
+        if event.status == TaskStatus.SUCCESS:
+            report: BatchReport = event.result
+            db_note = (
+                "" if report.db_recorded
+                else "（警告：结果未写入 SQLite 追溯数据库，详见日志）"
+            )
+            output_name = (
+                Path(report.output_path).name if report.output_path else "-"
+            )
+            self._set_status(
+                f"批量预测完成: 成功 {report.success_count}/{report.total}，"
+                f"失败 {report.failed_count}，耗时 {report.duration_ms} ms。"
+                f"结果已保存为 {output_name}{db_note}",
+                kind="ok" if report.failed_count == 0 else "info",
+            )
+        elif event.status == TaskStatus.CANCELLED:
+            report = event.result
+            if isinstance(report, BatchReport):
+                self._set_status(
+                    f"批量预测已取消: 已完成 {len(report.rows)}/{report.total} 行，"
+                    "已完成部分保留在输出中。",
+                    kind="info",
+                )
+            else:
+                self._set_status("批量预测已取消。", kind="info")
+        else:
+            self._show_error("批量预测失败", event.error_summary or "未知错误")
 
     # ---------- 预测 ----------
 
@@ -1418,7 +1642,8 @@ class DamagePredictionGUI:
                 if rho_used:
                     mode_label += f", ρ={rho_used:.2f}"
             self._set_status(
-                f"瞄准优化完成 ({mode_label}): 最佳瞄准点 ({result.best_x:.1f}, {result.best_y:.1f}) m, "
+                f"瞄准优化完成 ({mode_label}): 最佳瞄准点 "
+                f"({result.best_x:.1f}, {result.best_y:.1f}) m, "
                 f"Vmax={result.vmax:.4f}, 增益={result.gain_relative:.2%}",
                 kind="ok",
             )
@@ -1464,17 +1689,31 @@ class DamagePredictionGUI:
                      font=("Microsoft YaHei", 11, "bold")).pack(pady=(2, 0))
 
     def _handle_error(self, title: str, exc: Exception) -> None:
+        """错误处理：完整 traceback 记入日志文件，界面只展示友好消息。"""
+        self._logger.exception("%s: %s", title, exc)
         self._set_status(f"{title}: {exc}", kind="error")
-        detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-        messagebox.showerror(title, f"{exc}\n\n{detail}")
+        messagebox.showerror(
+            title, f"{exc}\n\n详细信息已记录到日志文件 logs/damage_gui.log。"
+        )
+
+    def _show_error(self, title: str, message: str) -> None:
+        """展示后台任务失败摘要（traceback 已由任务管理器记录日志）。"""
+        self._set_status(f"{title}: {message}", kind="error")
+        messagebox.showerror(title, message)
+
+    def _on_close(self) -> None:
+        """关闭窗口：请求取消后台任务并限时等待线程退出，再销毁窗口。"""
+        self.task_manager.shutdown(timeout=2.0)
+        self.root.destroy()
 
 
 def main() -> None:
+    setup_logging()
     root = tk.Tk()
     style = ttk.Style(root)
     try:
         style.theme_use("clam")
     except tk.TclError:
         pass
-    app = DamagePredictionGUI(root)
+    DamagePredictionGUI(root)
     root.mainloop()

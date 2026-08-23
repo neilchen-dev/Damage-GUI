@@ -18,8 +18,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from damage_gui.optimization.aim import (
-    correlated_gaussian_kernel,
     compute_aim_value_field_from_sigmas,
+    correlated_gaussian_kernel,
     gaussian_sampled_probability_kernel,
     monte_carlo_expected_damage,
     optimize_aim,

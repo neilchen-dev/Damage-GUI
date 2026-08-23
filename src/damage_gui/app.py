@@ -6,11 +6,8 @@ re-export（旧脚本、旧测试与旧 joblib 模型文件的导入路径不变
 """
 from __future__ import annotations
 
-# ---- 启动入口 ----
-from damage_gui.gui.main_window import DamagePredictionGUI, main
-
 # ---- 向后兼容 re-export（勿删：旧 joblib 模型按 damage_gui.app.* 反序列化） ----
-from damage_gui.config import APP_TITLE, Config, CONFIG  # noqa: F401
+from damage_gui.config import APP_TITLE, CONFIG, Config  # noqa: F401
 from damage_gui.data.loader import (  # noqa: F401
     Condition,
     DamageDataManager,
@@ -33,6 +30,9 @@ from damage_gui.evaluation.metrics import (  # noqa: F401
     safe_r2,
     spatial_metrics,
 )
+
+# ---- 启动入口 ----
+from damage_gui.gui.main_window import main
 from damage_gui.model.bundle import (  # noqa: F401
     DamageModelService,
     ModelBundle,

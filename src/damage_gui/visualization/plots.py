@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib import font_manager, ticker
 from matplotlib.figure import Figure
 
-from damage_gui.config import Config, CONFIG, DAMAGE_CMAP, ERROR_CMAP
+from damage_gui.config import CONFIG, DAMAGE_CMAP, ERROR_CMAP, Config
 from damage_gui.data.preprocessing import coordinate_axes
 
 matplotlib.use("TkAgg")
@@ -175,6 +175,7 @@ def render_heatmaps(
     for index, (axis, (title, matrix)) in enumerate(zip(
         axes[:2],
         [("真实毁伤场 True", true_matrix), ("预测毁伤场 Predicted", pred_matrix)],
+        strict=True,
     )):
         cropped, extent = crop_matrix_and_extent(matrix, bounds, config)
         image = axis.imshow(

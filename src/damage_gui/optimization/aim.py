@@ -30,7 +30,6 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal import fftconvolve
 
-
 # ===================== CEP / sigma 转换 =====================
 
 def cep_to_sigma(cep: float) -> float:
@@ -217,7 +216,7 @@ def gaussian_cell_probability_kernel(
     x_upper = x_centers + pixel_size_x / 2.0
     px_probs = np.array([
         normal_cdf(xu, 0.0, sx) - normal_cdf(xl, 0.0, sx)
-        for xl, xu in zip(x_lower, x_upper)
+        for xl, xu in zip(x_lower, x_upper, strict=True)
     ])
 
     y_centers = np.arange(-half_y, half_y + 1, dtype=np.float64) * pixel_size_y
@@ -225,7 +224,7 @@ def gaussian_cell_probability_kernel(
     y_upper = y_centers + pixel_size_y / 2.0
     py_probs = np.array([
         normal_cdf(yu, 0.0, sy) - normal_cdf(yl, 0.0, sy)
-        for yl, yu in zip(y_lower, y_upper)
+        for yl, yu in zip(y_lower, y_upper, strict=True)
     ])
 
     kernel = np.outer(py_probs, px_probs)
@@ -542,7 +541,11 @@ def compute_aim_value_field_from_sigmas(
     if matrix.ndim != 2:
         raise ValueError(f"damage_matrix must be 2-D, got shape {matrix.shape}")
     rows, cols = matrix.shape
-    if rows < 2 or cols < 2 or not math.isfinite(coord_min) or not math.isfinite(coord_max) or coord_max <= coord_min:
+    if (
+        rows < 2 or cols < 2
+        or not math.isfinite(coord_min) or not math.isfinite(coord_max)
+        or coord_max <= coord_min
+    ):
         raise ValueError("damage_matrix must be at least 2x2 and coord_max must exceed coord_min")
     px = (coord_max - coord_min) / (cols - 1)
     py = (coord_max - coord_min) / (rows - 1)

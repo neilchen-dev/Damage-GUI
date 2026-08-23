@@ -22,7 +22,7 @@ from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import shift as ndi_shift
 from sklearn.decomposition import PCA
 
-from damage_gui.config import Config, CONFIG
+from damage_gui.config import CONFIG, Config
 from damage_gui.data.loader import Condition
 from damage_gui.data.preprocessing import roi_mask_for_shape
 from damage_gui.model.rbf import build_aligned_shapes, compute_alignment_window

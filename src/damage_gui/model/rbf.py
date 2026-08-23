@@ -9,7 +9,7 @@ from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import center_of_mass as ndi_center_of_mass
 from scipy.ndimage import shift as ndi_shift
 
-from damage_gui.config import Config, CONFIG
+from damage_gui.config import CONFIG, Config
 from damage_gui.data.loader import Condition
 from damage_gui.data.preprocessing import roi_mask_for_shape
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from damage_gui.config import Config, CONFIG, ProgressCallback
+from damage_gui.config import CONFIG, Config, ProgressCallback
 from damage_gui.data.loader import (
     Condition,
     DamageDataManager,
@@ -16,7 +16,9 @@ from damage_gui.data.loader import (
     read_damage_matrix,
 )
 from damage_gui.data.preprocessing import evaluation_fields, roi_description, roi_mask_for_shape
+from damage_gui.errors import OperationCancelled
 from damage_gui.evaluation.metrics import SPATIAL_KEYS, metric_row, spatial_metrics
+from damage_gui.model.metadata import ModelMetadata, build_metadata
 from damage_gui.model.ood import OODDetector
 from damage_gui.model.pod import PODRBFDamageField
 from damage_gui.model.rbf import RBFDamageField
@@ -25,7 +27,7 @@ from damage_gui.model.validation import make_splits
 DamageFieldModel = RBFDamageField | PODRBFDamageField
 
 
-class TrainingCancelled(RuntimeError):
+class TrainingCancelled(OperationCancelled):
     """用户取消训练时抛出。"""
 
 
@@ -46,6 +48,8 @@ class ModelBundle:
     validation_mode: str = "random"
     model_type: str = "rbf"
     train_time_seconds: float = 0.0
+    # 训练完成时自动构建；旧版模型包（无该字段）加载后为 None
+    metadata: ModelMetadata | None = None
 
     def resolved_config(self) -> Config:
         """恢复训练时配置；兼容字段增减以及早期模型包。"""
@@ -209,6 +213,7 @@ class DamageModelService:
         )
 
         test_records = records if is_loo else splits[0].test
+        train_time = time.perf_counter() - started
 
         return ModelBundle(
             level=level,
@@ -223,7 +228,17 @@ class DamageModelService:
             ood_detector=ood_detector,
             validation_mode=validation_mode,
             model_type=model_type,
-            train_time_seconds=time.perf_counter() - started,
+            train_time_seconds=train_time,
+            metadata=build_metadata(
+                model_type=model_type,
+                damage_level=level,
+                train_records=deliverable_train_records,
+                config=config,
+                validation_mode=validation_mode,
+                accuracy_report=accuracy_report,
+                train_time_seconds=train_time,
+                pod_n_components=pod_n_components,
+            ),
         )
 
     def predict_matrix(self, bundle: ModelBundle, condition: Condition) -> np.ndarray:
@@ -254,7 +269,7 @@ class DamageModelService:
         ]
         scope_defs = [name for name, _ in scopes] + ["roi_overall"]
 
-        for index, (record, true_matrix, pred_matrix) in enumerate(pairs):
+        for _index, (record, true_matrix, pred_matrix) in enumerate(pairs):
             smoothed_true, smoothed_pred = evaluation_fields(
                 true_matrix, pred_matrix, config
             )
@@ -350,8 +365,14 @@ class DamageModelService:
 
             condition_rows.append(row)
 
-            # 汇总累积（Raw / Smoothed 双口径）
-            def accumulate(field_name: str, field_true: np.ndarray, field_pred: np.ndarray) -> None:
+            # 汇总累积（Raw / Smoothed 双口径）；roi_flat_mask 经默认参数绑定
+            # 当前迭代的值，避免闭包延迟绑定循环变量（B023）
+            def accumulate(
+                field_name: str,
+                field_true: np.ndarray,
+                field_pred: np.ndarray,
+                roi_flat_mask: np.ndarray = roi_flat_mask,
+            ) -> None:
                 scope_true_parts.setdefault((field_name, "overall"), []).append(field_true)
                 scope_pred_parts.setdefault((field_name, "overall"), []).append(field_pred)
                 scope_true_parts.setdefault((field_name, "roi_overall"), []).append(

@@ -39,3 +39,9 @@ dist/dist/
 *.key
 *.pem
 *.log
+
+# Engineering artifacts: logs and SQLite traceability databases
+logs/
+*.db
+*.db-wal
+*.db-shm

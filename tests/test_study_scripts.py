@@ -11,12 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import pandas as pd
+
 from ablation_study import evaluate_focus
 from calibrate_ood import normalized_steps, recommend_thresholds, validation_errors
-from damage_gui.data.loader import Condition
-from damage_gui.data.loader import DamageRecord
-
-import pandas as pd
+from damage_gui.data.loader import Condition, DamageRecord
 
 
 class _ConstantModel:

@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from damage_gui.config import Config, CONFIG
+from damage_gui.config import CONFIG, Config
 from damage_gui.data.preprocessing import normalize_matrix_shape
 
 FILENAME_PATTERN = re.compile(r"DamageMatrix_([FMP])_h_(\d+)_v_(\d+)_deg_(\d+)$")

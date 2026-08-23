@@ -1,6 +1,6 @@
 # 基于数据驱动的毁伤场快速预测系统
 
-这是一个面向仿真毁伤数据的 Python 桌面工具：根据飞行/撞击工况重建二维毁伤场，并提供精度评估、可信度检测、可视化和瞄准点优化能力。
+这是一个面向仿真毁伤数据的 Python 桌面工具：根据飞行/撞击工况重建二维毁伤场，并提供精度评估、可信度检测、可视化和瞄准点优化能力。项目同时具备完整的工程化支撑——模型元数据追溯、SQLite 任务/结果管理、后台任务状态机、批量预测、统一日志与错误体系、数值回归测试、双平台 CI 与 Windows 桌面交付（见下文[软件架构](#软件架构-software-architecture)与[工程化特性](#工程化特性-engineering-features)）。
 
 **英文定位**：Centroid-Aligned POD-RBF Surrogate Model for Fast Reconstruction and Assessment of High-Dimensional Damage Fields
 
@@ -33,13 +33,72 @@
 - **二维空间场指标**：质心误差、峰值位置/强度误差、IoU、Dice——覆盖空间位置与毁伤区域形状的评价维度。
 - **瞄准点优化**：基于 CEP 或 REP/DEP 概率散布模型的价值场卷积 + argmax 最优瞄准点。支持完整协方差散布——相关系数 ρ ∈ (−1, 1) 的相关高斯核，以及 REP 主轴相对 x 轴旋转任意角度 θ 的散布椭圆（协方差矩阵参数化）。`monte_carlo_expected_damage` 提供落点采样的 Monte Carlo 独立验证：与解析卷积走不同数学路径，二者在统计容差内一致即可互证实现正确性（`tests/test_aim_correlation.py`）。
 
+## 软件架构（Software Architecture）
+
+```text
+Desktop GUI (Tkinter) ──┐  训练 / 预测 / 批量 / 瞄准优化
+CLI (damage-gui-cli) ───┤  info / predict / batch
+研究脚本 (scripts/) ─────┘
+            ↓
+Application Services          TaskManager（任务状态机 + 协作式取消）
+                              DamageModelService（训练编排 + 评估）
+                              model.registry（模型保存/加载校验）
+                              batch.runner（批量预测执行器）
+            ↓
+Model / Evaluation / Optimization
+                              rbf · pod · validation · ood
+                              metrics · aim（纯算法，无 GUI/存储依赖）
+            ↓
+Storage / Files               SQLite 追溯库（models / jobs / prediction_results）
+                              joblib 模型 + *.meta.json 元数据 sidecar
+                              CSV 报告 · 轮转日志 logs/damage_gui.log
+```
+
+上层只经服务层调用算法层；算法核心（rbf/pod/ood/aim/metrics）不依赖 GUI 与存储，GUI、CLI 与脚本共享同一套业务实现。
+
+## 工程化特性（Engineering Features）
+
+- **模块化分层架构**：GUI / CLI / 服务层 / 算法层 / 存储层职责分离，入口瘦启动 + 向后兼容 re-export（旧模型文件可继续加载）。
+- **后台任务状态机**：`PENDING → RUNNING → SUCCESS | FAILED | CANCELLED` 显式转移表（非法转移抛错）；GUI 不直接持有线程对象，训练与批量统一经 TaskManager 提交/取消/事件轮询，关窗安全终止。
+- **SQLite 任务与结果追溯**：`models / jobs / prediction_results` 三表 + 索引，只存元数据与摘要（473×473 场阵不入库）；数据库故障**显式降级**——计算照常完成，但以 ERROR 日志 + 界面警告 + 返回值标志明确告知"未入库"，绝不静默。
+- **模型元数据与版本管理**：每次训练产出 `model_id`、训练数据指纹（工况 + 文件内容 SHA-256）、git commit、训练参数与验证指标；三版本号分离（软件版本 / 元数据 schema / 模型格式），sidecar 与内嵌双写、加载时互相校验，旧版无元数据模型向后兼容。
+- **可复现的结构化验证**：五种验证模式（随机留出 / 三种整层留出 / 角落外推）+ 固定随机种子。
+- **批量预测**：CSV 输入/输出；行级失败隔离（单行出错不中断批次）；取消保留已完成行；每行输出含模型版本、OOD 可信度、真值对照指标与耗时；GUI 与 CLI 双入口。
+- **统一日志与错误体系**：控制台 + 轮转文件日志；`DamageGuiError` 错误分层，GUI 只展示友好消息，完整 traceback 进日志文件。
+- **自动化测试**：147 个 unittest 用例（算法、指标、端到端管线、存储、任务状态机、批量、CLI），全合成数据、无私有数据依赖。
+- **数值回归测试**：固定种子合成集上的黄金值对比（预测场 / POD 模态 / OOD 分级 / 核心指标）；容差依据双进程实测漂移（=0.0）设定，CI 双平台运行为最终权威；禁止为变绿随意放宽。
+- **Windows/Linux 双平台 CI**：`ruff → 单元+数值回归测试 → Windows PyInstaller 真实构建（校验 exe 产物）→ artifact 上传`；仅 tag 推送才发布 Release。
+- **Windows 桌面交付**：PyInstaller onedir 发布包（`scripts/build_release.bat`，CI 与本地同一路径）。
+
+## 模型追溯链（Model Traceability）
+
+```text
+训练数据（DamageMatrix 文件集）
+    ↓ SHA-256（排序后的工况 + 源文件内容哈希）
+训练数据指纹 training_data_hash
+    ↓
+模型 joblib + 元数据 sidecar（model_id · 三版本号 · 训练参数 · 验证指标 · git commit）
+    ↓
+结构化验证结果（Raw/Smoothed 双口径指标，随模型包保存）
+    ↓
+SQLite：models ← jobs(training) ← jobs(batch_prediction) ← prediction_results
+    ↓
+预测输出 CSV（每行携带 model_id + 软件版本 + OOD 分级 + 错误信息）
+```
+
+任何一条批量预测结果都能回溯到"哪个版本的数据 + 哪个 commit 的代码 + 哪个模型 + 何种验证结论"。
+
 ## 项目结构
 
 ```text
 .
 ├── src/damage_gui/
 │   ├── app.py                 # 应用入口（瘦启动器 + 向后兼容 re-export）
-│   ├── config.py              # 全局配置（模型 / 预处理 / 评估 / UI）
+│   ├── cli.py                 # 工程化 CLI（info / predict / batch）
+│   ├── config.py              # 全局配置（模型 / 预处理 / 评估 / UI / 工况范围）
+│   ├── errors.py              # 统一错误体系
+│   ├── logging_setup.py       # 控制台 + 轮转文件日志
+│   ├── tasks.py               # 后台任务状态机与 TaskManager
 │   ├── data/
 │   │   ├── loader.py          # 工况解析与 DamageMatrix 读取
 │   │   └── preprocessing.py   # 双边滤波、ROI、坐标网格、评估口径平滑
@@ -48,7 +107,15 @@
 │   │   ├── pod.py             # POD-RBF 降阶代理模型
 │   │   ├── validation.py      # 结构化交叉验证切分
 │   │   ├── ood.py             # OOD / 预测可信度检测
-│   │   └── bundle.py          # 训练编排、评估与模型包（ModelBundle）
+│   │   ├── bundle.py          # 训练编排、评估与模型包（ModelBundle）
+│   │   ├── metadata.py        # 模型元数据（三版本号 + 数据指纹 + commit）
+│   │   └── registry.py        # 模型保存/加载校验（joblib + meta.json sidecar）
+│   ├── batch/
+│   │   ├── schema.py          # 批量 CSV 输入校验与输出格式
+│   │   └── runner.py          # 批量预测执行器（失败隔离 / 取消 / 追溯）
+│   ├── storage/
+│   │   ├── db.py              # SQLite 连接与幂等 schema
+│   │   └── repositories.py    # models / jobs / prediction_results 仓储
 │   ├── evaluation/
 │   │   └── metrics.py         # 数值指标 + 空间场指标（质心/峰值/IoU/Dice）
 │   ├── optimization/
@@ -56,20 +123,23 @@
 │   ├── visualization/
 │   │   └── plots.py           # 热力图与误差场渲染
 │   └── gui/
-│       ├── main_window.py     # Tkinter 主窗口（后台线程训练）
+│       ├── main_window.py     # Tkinter 主窗口（TaskManager 后台任务）
 │       ├── presentation.py    # 选项映射与指标展示文案
 │       ├── resources.py       # 源码/打包双模式资源路径
 │       └── widgets.py         # 通用小部件工具
 ├── scripts/
 │   ├── build.bat              # 常规 PyInstaller 构建脚本
 │   ├── build_release.bat      # 轻量版 Windows 发布构建脚本
+│   ├── batch_predict.py       # 批量预测入口（CLI 兼容封装）
+│   ├── regen_regression_golden.py  # 数值回归黄金值再生成（受控）
 │   ├── generate_results.py    # 从本地数据复现示例结果
 │   ├── ablation_study.py      # 消融实验（降噪/对齐/POD 各自的贡献）
 │   ├── validation_study.py    # 五种结构化验证汇总表
 │   └── pod_sweep.py           # POD 模态数 K 扫描与性能对比
-├── tests/                     # 可重复运行的数值、指标与端到端测试
-├── .github/workflows/test.yml # CI（Windows + Ubuntu，Python 3.11）
-├── pyproject.toml             # 包元数据与依赖版本范围
+├── tests/                     # 147 个用例（单元 / 端到端 / 数值回归 + 黄金值）
+├── docs/                      # 阶段验收报告与简历材料
+├── .github/workflows/test.yml # CI（lint → 双平台测试 → Windows 构建 → artifact）
+├── pyproject.toml             # 包元数据、依赖与 ruff 配置
 ├── LICENSE                    # MIT License
 ├── requirements.txt
 └── README.md
@@ -88,6 +158,26 @@ python -m damage_gui.app
 ```
 
 启动后，在 GUI 中选择本地数据目录、毁伤等级、模型类型（RBF / POD-RBF）与验证方式，训练或加载模型后即可输入工况进行预测。训练在后台线程执行，可随时取消；预测完成后显示耗时与模型可信度。
+
+### 命令行（CLI）
+
+核心功能可脱离 GUI 执行（安装后可用 `damage-gui-cli`，或 `python -m damage_gui.cli`）：
+
+```powershell
+# 查看模型元数据（模型 ID / 三版本号 / 训练数据指纹 / commit / 验证指标）
+python -m damage_gui.cli info --model damage_model_F.joblib
+
+# 单工况预测（含 OOD 可信度与耗时，可选导出预测矩阵 CSV）
+python -m damage_gui.cli predict --model damage_model_F.joblib `
+    --h 1 --v 300 --deg 30 --export pred.csv
+
+# CSV 批量预测（输入列 job_id,h,v,deg,level；结果含模型版本/OOD/指标/耗时，
+# 自动写入 SQLite 追溯库；--data-dir 提供真值对照指标）
+python -m damage_gui.cli batch --model damage_model_F.joblib `
+    --input batch.csv --output batch_result.csv --data-dir data
+```
+
+批量预测行级失败不中断批次（失败行以 FAILED + 错误信息记录）；退出码：0 全部成功、1 存在失败行或取消、2 输入错误。`scripts/batch_predict.py` 保留为兼容入口。
 
 ## 图形界面
 
@@ -200,25 +290,32 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 ```
 
-测试覆盖：
+共 **147 个用例**，全部基于合成数据（不依赖私有真实数据）：
 
-- 散布参数转换（CEP / REP-DEP → σ）、概率核归一化、零散布极限
-- 相关散布核（ρ ≠ 0）：归一化、马氏截断、方向性、ρ=0 一致性
-- 旋转椭圆协方差参数化：三角恒等式、方差旋转不变性、轴交换
+- 散布参数转换（CEP / REP-DEP → σ）、概率核归一化、零散布极限；相关散布核（ρ ≠ 0）与旋转椭圆协方差
 - Monte Carlo 期望毁伤效能 vs 解析卷积的一致性（独立/相关散布两组）
 - OOD 凸包检测：近但凸包外的降级、共面降维、一维区间退化、可关闭回退
-- 核心评价指标（相对误差、混合误差封顶、常数真值 R²）
-- 空间场指标（质心误差、峰值误差、IoU、Dice）
-- RBF 训练点恢复、预测值域 [0,1]、ROI 外置零、矩阵尺寸归一化、模型保存加载
-- **质心对齐消融**（合成移动高斯场：对齐 vs 重影）
+- 核心评价指标、空间场指标（质心/峰值/IoU/Dice）
+- RBF 训练点恢复、预测值域、ROI 外置零、模型保存加载；质心对齐消融（合成移动高斯场）
 - POD-RBF 模态重构、解释方差、分量数截断
-- OOD 检测分级与未拟合防护
-- 结构化验证切分（整层留出覆盖全部工况、角落区域排除）
-- 端到端合成数据集训练管线（含取消训练）
-- 自定义配置贯穿坐标、ROI、评估平滑、误差阈值与模型包恢复
+- 结构化验证切分与端到端合成数据集训练管线（含取消训练）
+- 模型元数据（三版本号、数据指纹稳定性与内容敏感性、sidecar 双写与篡改检测、旧模型兼容）
+- SQLite 仓储 CRUD 与故障降级（坏库路径下计算照常 + ERROR 日志显式记录）
+- 任务状态机（转移表、互斥、协作取消、失败与事件流）
+- 批量预测（解析校验、行级失败隔离、取消保留部分结果、输出与追溯）
+- CLI（info / predict / batch 退出码与产物）
+- **数值回归**：固定种子合成集上的黄金值对比（预测场 / POD 模态 / OOD 分级 / 核心指标）
 - 项目版本、Windows 发布包版本与许可证元数据一致性
 
-GitHub Actions 在 Windows 与 Ubuntu（Python 3.11）上自动运行全部测试。
+CI（`.github/workflows/test.yml`）四段流水线，失败可按 job 定位阶段：
+
+```text
+push / PR
+ ├─ lint   (Ubuntu)            ruff check
+ ├─ test   (Windows + Ubuntu)  全部 147 个用例（含数值回归双平台对比）
+ └─ build  (Windows)           真实运行 PyInstaller 构建 → 校验 exe 产物 → 上传 artifact
+     └─ release                仅 tag 推送时把构建产物挂到 GitHub Release
+```
 
 ## 构建与发布
 

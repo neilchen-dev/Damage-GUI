@@ -15,7 +15,6 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from damage_gui.config import CONFIG
 from damage_gui.data.loader import Condition, DamageDataManager
 from damage_gui.evaluation.metrics import extract_core_metrics
 from damage_gui.model.bundle import DamageModelService
@@ -59,7 +58,8 @@ def write_markdown(frame: pd.DataFrame, output: Path, level: str) -> None:
         "",
         "固定随机种子 80/20 划分；精度指标为主要毁伤区 Smoothed 口径。",
         "",
-        "| K | Used K | Explained variance | Mean RE | P95 Hybrid | R² | Model (MB) | Train (s) | Predict (ms) |",
+        "| K | Used K | Explained variance | Mean RE | P95 Hybrid | R² | "
+        "Model (MB) | Train (s) | Predict (ms) |",
         "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for _, row in frame.iterrows():

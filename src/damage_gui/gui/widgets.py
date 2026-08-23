@@ -26,7 +26,7 @@ def rounded_rect(
 def bind_autowrap(label: tk.Label, min_width: int = 80) -> None:
     """让 Label 的换行宽度跟随实际可用宽度，避免固定 wraplength 截断长文本。"""
 
-    def on_configure(event: "tk.Event[tk.Label]") -> None:
+    def on_configure(event: tk.Event[tk.Label]) -> None:
         label.configure(wraplength=max(event.width - 8, min_width))
 
     label.bind("<Configure>", on_configure)

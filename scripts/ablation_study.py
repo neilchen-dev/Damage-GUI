@@ -49,7 +49,7 @@ def evaluate_focus(model, test_conditions, test_matrices):
     """主要毁伤区核心指标（Smoothed 口径）+ 预测耗时。"""
     true_parts, pred_parts = [], []
     started = time.perf_counter()
-    for values, truth in zip(test_conditions, test_matrices):
+    for values, truth in zip(test_conditions, test_matrices, strict=True):
         condition = Condition(*map(float, values))
         prediction = model.predict_matrix(condition)
         true_parts.append(truth)
@@ -57,7 +57,7 @@ def evaluate_focus(model, test_conditions, test_matrices):
     predict_time = (time.perf_counter() - started) / len(test_conditions)
 
     y_true, y_pred = [], []
-    for truth, prediction in zip(true_parts, pred_parts):
+    for truth, prediction in zip(true_parts, pred_parts, strict=True):
         smoothed_true, smoothed_pred = evaluation_fields(truth, prediction, CONFIG)
         mask = smoothed_true > CONFIG.relative_error_threshold
         y_true.append(smoothed_true.ravel()[mask.ravel()])
@@ -162,7 +162,7 @@ def main() -> None:
     flags = [
         ("No", "No"), ("No", "Yes"), ("Yes", "No"), ("Yes", "Yes"), ("Yes", "Yes"),
     ]
-    for (result, (align_flag, denoise_flag)) in zip(results, flags):
+    for (result, (align_flag, denoise_flag)) in zip(results, flags, strict=True):
         lines.append(
             f"| {result['Model']} | {align_flag} | {denoise_flag} "
             f"| {result['MeanRE']:.2%} | {result['P95Hybrid']:.2%} "

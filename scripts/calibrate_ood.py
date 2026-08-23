@@ -24,7 +24,6 @@ from damage_gui.config import CONFIG
 from damage_gui.data.loader import DamageDataManager
 from damage_gui.model.ood import OODDetector
 
-
 AXES = ("h", "v", "deg")
 MODE_MARKERS = {
     "h": "Leave-h-out",
