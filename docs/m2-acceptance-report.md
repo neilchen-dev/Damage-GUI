@@ -75,10 +75,22 @@ POD 累计解释方差与实际模态数、OOD 分级与最近工况距离、核
 |---|---|---|
 | 本机 Windows（Python 3.12.10） | `python -m unittest discover -s tests` | **139 tests, OK（5.3s）**：原 83 + M1 新增 52 + M2 数值回归 4 |
 | 本机 Windows | `ruff check .` | All checks passed |
-| CI Windows + Ubuntu（Python 3.11） | workflow `test` job | 已配置；**首次 push 后即为权威双平台验证**（含数值回归黄金值对比）。CI 与本机 Python 次版本不同（3.11 vs 3.12），这本身构成一层额外的版本漂移检验 |
+| CI Windows（windows-latest，Python 3.11） | workflow `test` job | **成功**（首次运行，含数值回归黄金值对比） |
+| CI Linux（ubuntu-latest，Python 3.11） | workflow `test` job | **成功**（首次运行，**原始容差 1e-6 / 1e-9 未调整即通过**——跨平台实测漂移在容差内，无需放宽） |
 
-**已知边界**：本机无法运行 Linux，Linux 侧结果以 CI 首次运行为准；若数值回归在 CI
-失败，按 §3 流程记录实测漂移后调整容差（一处常量），不回退测试。
+**首次 CI 运行结果**（commit `07aa7f7`，run `32617285181`，2026-08-23）：
+
+```text
+✓ Lint (ruff)                       8s
+✓ Tests (ubuntu-latest, Py3.11)     31s
+✓ Tests (windows-latest, Py3.11)   1m6s
+✓ Windows PyInstaller build        2m6s   （exe 校验通过，artifact 已上传）
+- Attach release (tags only)       skipped（无 tag，符合设计）
+artifact: Damage-GUI-win64（zip，约 87.5 MB）
+```
+
+至此双平台验收闭环：§3 的容差假设（Windows/Linux 漂移在 1e-6 内）已被 CI Linux
+实跑证实，未发生任何容差调整。
 
 ---
 
@@ -141,7 +153,7 @@ push / PR
 
 ## 8. 已知限制与后续
 
-1. Linux 侧数值回归与构建结果以 CI 首次运行为准（workflow 已就绪，待 push 触发）；
+1. ~~Linux 侧数值回归与构建结果以 CI 首次运行为准~~ → **已闭环**：首次 CI（§4）Windows/Linux 双平台测试与 Windows 构建全部通过，数值回归原始容差未被调整；
 2. CI 未锁定依赖小版本（requirements 为范围约束）——sklearn/numpy 小版本升级若引起
    randomized 路径外的小漂移，按 §3 流程以实测数据调整容差；
 3. PyInstaller onedir 体积 303MB 未做裁剪优化（属可选优化，非 M2 目标）；
