@@ -2,16 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-from damage_gui.app import (
-    CONFIG,
-    Condition,
-    DamageDataManager,
-    DamageModelService,
-    read_damage_matrix,
-    render_heatmaps,
-)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from damage_gui.config import CONFIG
+from damage_gui.data.loader import Condition, DamageDataManager, read_damage_matrix
+from damage_gui.model.bundle import DamageModelService
+from damage_gui.visualization.plots import render_heatmaps
 
 
 def main() -> None:
@@ -30,9 +29,19 @@ def main() -> None:
     true_matrix = read_damage_matrix(record.path)
     prediction = service.predict_matrix(bundle, test_condition)
 
-    figure = render_heatmaps(true_matrix, prediction, CONFIG.eval_area_threshold)
+    figure = render_heatmaps(
+        true_matrix,
+        prediction,
+        CONFIG.display_threshold,
+        CONFIG,
+    )
     figure.savefig(args.output_dir / f"{args.level.lower()}_prediction.png", dpi=160)
     bundle.accuracy_report.to_csv(args.output_dir / f"{args.level.lower()}_accuracy.csv", index=False)
+
+    focus_scope = f"damage_gt_{CONFIG.relative_error_threshold:.2f}"
+    smoothed = bundle.accuracy_report
+    if "field" in smoothed.columns:
+        smoothed = smoothed[smoothed["field"] == "smoothed"]
 
     lines = [
         f"# {args.level} level evaluation result",
@@ -44,7 +53,9 @@ def main() -> None:
         "| Scope | RMSE | MAE | R2 | Mean relative error | P95 hybrid error |",
         "|---|---:|---:|---:|---:|---:|",
     ]
-    for _, row in bundle.accuracy_report.iterrows():
+    for _, row in smoothed.iterrows():
+        if row["scope"] == "spatial":
+            continue
         lines.append(
             f"| {row['scope']} | {row['RMSE']:.4f} | {row['MAE']:.4f} | {row['R2']:.4f} | "
             f"{row['MeanRelativeError']:.2%} | {row['P95HybridError']:.2%} |"

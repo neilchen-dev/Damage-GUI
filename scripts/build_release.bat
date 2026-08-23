@@ -5,7 +5,7 @@ REM Build a lightweight Windows release. Training data and .joblib models
 REM are intentionally excluded; select them from the GUI at runtime.
 cd /d "%~dp0.."
 
-set "VERSION=v1.0.0"
+set "VERSION=v2.0.0"
 set "APP_NAME=Damage-GUI-%VERSION%-win64"
 set "OUTPUT_DIR=release\%APP_NAME%"
 
