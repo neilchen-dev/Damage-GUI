@@ -6,10 +6,10 @@
   <meta name="color-scheme" content="light">
   <title>DamageLab — Damage-Field Prediction &amp; Analysis</title>
   <link rel="icon" type="image/png" href="/static/assets/damagelab-icon.png">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=2.1.0-ui3">
 </head>
 <body>
-  <div id="app" data-ready="false">
+  <div id="app" data-ready="false" data-active-panel="prediction">
     <header class="app-header">
       <div class="brand-block">
         <div class="brand-mark" aria-hidden="true">
@@ -46,12 +46,20 @@
 
     <div class="global-toolbar" role="toolbar" aria-label="Workbench toolbar" data-i18n-aria-label="aria.toolbar">
       <div class="toolbar-context">
-        <span class="toolbar-label" data-i18n="toolbar.active_model">ACTIVE MODEL</span>
-        <span id="toolbar-model" class="toolbar-value" data-i18n="model.none">No model selected</span>
+        <div class="toolbar-model-control">
+          <span class="toolbar-label" data-i18n="toolbar.active_model">ACTIVE MODEL</span>
+          <select id="model-select" class="toolbar-model-select" aria-label="Active model" data-i18n-aria-label="toolbar.active_model" disabled>
+            <option value="" data-i18n="model.loading">Loading models...</option>
+          </select>
+          <span id="toolbar-model" class="toolbar-value" data-i18n="model.none" hidden>No model selected</span>
+        </div>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <div class="toolbar-state">
+          <span class="toolbar-label" data-i18n="toolbar.prediction">PREDICTION</span>
+          <span id="toolbar-prediction-state" class="toolbar-state-value" data-i18n="toolbar.idle">Idle</span>
+        </div>
       </div>
-      <div class="toolbar-actions">
-        <button id="toolbar-run" class="button button-primary" type="button" disabled data-i18n="action.run_prediction">Run Prediction</button>
-      </div>
+      <div class="toolbar-actions"><span class="toolbar-hint" data-i18n="toolbar.ready_hint">Set conditions in the workspace to begin.</span></div>
     </div>
 
     <main class="workbench-main">
@@ -86,10 +94,7 @@
 
         <section class="property-section" data-property-panel="model" hidden>
           <div class="section-title" data-i18n="model.selection">Model Selection</div>
-          <label class="field-label" for="model-select" data-i18n="model.server_model">Server model</label>
-          <select id="model-select" class="control" disabled>
-            <option value="" data-i18n="model.loading">Loading models...</option>
-          </select>
+          <p class="section-note" data-i18n="model.toolbar_hint">Choose the active model from the workbench toolbar.</p>
           <div id="model-empty" class="inline-state" hidden data-i18n="model.empty">No server models available.</div>
           <dl id="model-summary" class="property-list"></dl>
           <div class="section-title section-title-spaced" data-i18n="model.metadata">Metadata</div>
@@ -100,21 +105,6 @@
           <div class="section-title" data-i18n="validation.summary">Validation Summary</div>
           <div id="validation-empty" class="inline-state" data-i18n="validation.empty">Select a model with validation metadata.</div>
           <dl id="validation-summary" class="property-list"></dl>
-        </section>
-
-        <section class="property-section" data-property-panel="prediction">
-          <div class="section-title" data-i18n="prediction.input_condition">Input Condition</div>
-          <p class="section-note" data-i18n="prediction.condition_note">Values are validated by the server model.</p>
-          <form id="prediction-form" novalidate>
-            <label class="field-label" for="condition-h" data-i18n="condition.height">Height, h</label>
-            <div class="input-with-unit"><input id="condition-h" class="control numeric" name="h" type="number" step="any" placeholder="h"><span>mm</span></div>
-            <label class="field-label" for="condition-v" data-i18n="condition.velocity">Velocity, v</label>
-            <div class="input-with-unit"><input id="condition-v" class="control numeric" name="v" type="number" step="any" placeholder="v"><span>m/s</span></div>
-            <label class="field-label" for="condition-deg" data-i18n="condition.angle">Angle, θ</label>
-            <div class="input-with-unit"><input id="condition-deg" class="control numeric" name="deg" type="number" step="any" placeholder="θ"><span>deg</span></div>
-            <button id="prediction-submit" class="button button-primary button-wide" type="submit" disabled data-i18n="action.run_prediction">Run Prediction</button>
-          </form>
-          <div id="prediction-form-message" class="form-message" role="alert" hidden></div>
         </section>
 
         <section class="property-section" data-property-panel="batch" hidden>
@@ -204,6 +194,32 @@
           </div>
           <span id="viewport-badge" class="result-badge" data-i18n="result.no_result">NO RESULT</span>
         </div>
+        <section class="prediction-controls" aria-label="Prediction inputs" data-i18n-aria-label="prediction.controls">
+          <div class="prediction-controls-heading">
+            <div>
+              <div class="panel-kicker" data-i18n="prediction.input_kicker">INPUT CONDITION</div>
+              <h2 data-i18n="prediction.input_condition">Input Condition</h2>
+              <p class="section-note" data-i18n="prediction.condition_note">Values are validated by the active server model.</p>
+            </div>
+            <span id="prediction-model-hint" class="control-hint" data-i18n="prediction.model_hint">Select a model from the toolbar to enable prediction.</span>
+          </div>
+          <form id="prediction-form" class="prediction-form" novalidate>
+            <div class="condition-field">
+              <label class="field-label" for="condition-h" data-i18n="condition.height">Height, h</label>
+              <div class="input-with-unit"><input id="condition-h" class="control numeric" name="h" type="number" step="any" placeholder="e.g. 100" data-i18n-placeholder="condition.height_placeholder"><span>mm</span></div>
+            </div>
+            <div class="condition-field">
+              <label class="field-label" for="condition-v" data-i18n="condition.velocity">Velocity, v</label>
+              <div class="input-with-unit"><input id="condition-v" class="control numeric" name="v" type="number" step="any" placeholder="e.g. 4" data-i18n-placeholder="condition.velocity_placeholder"><span>m/s</span></div>
+            </div>
+            <div class="condition-field">
+              <label class="field-label" for="condition-deg" data-i18n="condition.angle">Angle, θ</label>
+              <div class="input-with-unit"><input id="condition-deg" class="control numeric" name="deg" type="number" step="any" placeholder="e.g. 5" data-i18n-placeholder="condition.angle_placeholder"><span>deg</span></div>
+            </div>
+            <button id="prediction-submit" class="button button-primary prediction-submit" type="submit" disabled data-i18n="action.run_prediction">Run Prediction</button>
+          </form>
+          <div id="prediction-form-message" class="form-message" role="alert" hidden></div>
+        </section>
         <div class="viewport-toolbar" role="toolbar" aria-label="Viewport toolbar" data-i18n-aria-label="aria.viewport_toolbar">
           <button id="fit-button" class="button button-quiet is-selected" type="button" data-i18n="action.fit">Fit</button>
           <button id="actual-button" class="button button-quiet" type="button">1:1</button>
@@ -214,8 +230,34 @@
         <div id="plot-surface" class="plot-surface" aria-busy="false">
           <div id="viewport-loading" class="viewport-state" hidden data-i18n="viewport.loading">Loading result...</div>
           <div id="viewport-empty" class="viewport-state">
-            <div class="empty-code" data-i18n="viewport.empty_code">VIEWPORT EMPTY</div>
-            <div data-i18n="viewport.empty_text">Run a prediction to view results.</div>
+            <div class="empty-illustration" aria-hidden="true">
+              <svg viewBox="0 0 180 110" role="presentation">
+                <defs>
+                  <linearGradient id="empty-field-gradient" x1="0" x2="1" y1="0" y2="1">
+                    <stop offset="0" stop-color="#d9eaf8"></stop>
+                    <stop offset="1" stop-color="#9fc6e6"></stop>
+                  </linearGradient>
+                </defs>
+                <path class="empty-grid-line" d="M12 82H168M12 55H168M12 28H168M38 12V98M72 12V98M106 12V98M140 12V98"></path>
+                <path class="empty-field" d="M28 77C32 46 54 23 84 26C101 12 128 18 135 39C158 43 166 61 157 79C139 97 109 86 94 92C73 102 48 96 28 77Z"></path>
+                <path class="empty-contour" d="M43 74C48 51 64 36 85 38C101 26 122 32 126 49C143 51 148 65 139 75C124 87 105 74 91 82C72 91 55 86 43 74Z"></path>
+                <circle class="empty-impact" cx="86" cy="59" r="5"></circle>
+                <path class="empty-axis" d="M20 92H48M20 92V66"></path>
+              </svg>
+            </div>
+            <div class="empty-code" data-i18n="viewport.empty_code">NO PREDICTION YET</div>
+            <strong class="empty-title" data-i18n="viewport.empty_title">No prediction yet</strong>
+            <div class="empty-text" data-i18n="viewport.empty_text">Enter conditions and run a prediction to render the damage field.</div>
+            <div class="empty-steps" aria-label="Prediction steps" data-i18n-aria-label="prediction.steps">
+              <span><b>1</b><span data-i18n="viewport.step_condition">Enter conditions</span></span>
+              <span class="empty-step-arrow" aria-hidden="true">→</span>
+              <span><b>2</b><span data-i18n="viewport.step_run">Run prediction</span></span>
+            </div>
+          </div>
+          <div id="viewport-error" class="viewport-state viewport-state-error" hidden>
+            <div class="empty-code" data-i18n="viewport.image_error_title">IMAGE UNAVAILABLE</div>
+            <strong class="empty-title" data-i18n="viewport.image_error">Unable to load the result image</strong>
+            <div class="empty-text" data-i18n="viewport.image_error_detail">The structured result is still available in the Results inspector.</div>
           </div>
           <img id="result-image" class="result-image fit" alt="Server-rendered damage field" data-i18n-alt="viewport.image_alt" hidden>
         </div>
@@ -226,7 +268,11 @@
           <span class="panel-kicker" data-i18n="results.title_upper">RESULTS</span>
           <span id="results-run" class="mono" data-i18n="result.no_run">NO RUN</span>
         </div>
-        <div id="results-empty" class="inline-state" data-i18n="results.empty">Prediction values will appear here.</div>
+        <div id="results-empty" class="results-empty">
+          <div class="results-empty-mark" aria-hidden="true">∿</div>
+          <strong data-i18n="results.empty_title">No prediction data</strong>
+          <p data-i18n="results.empty">Run a prediction to populate the inspector.</p>
+        </div>
         <div id="results-content" hidden>
           <section class="result-section">
             <div class="section-title" data-i18n="results.field_summary">Field Summary</div>
@@ -268,6 +314,6 @@
       <span id="status-detail" class="status-detail"></span>
     </footer>
   </div>
-  <script defer src="/static/app.js"></script>
+  <script defer src="/static/app.js?v=2.1.0-ui3"></script>
 </body>
 </html>
