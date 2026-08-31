@@ -1,6 +1,12 @@
 # 基于数据驱动的毁伤场快速预测系统
 
-这是一个面向仿真毁伤数据的 Python 桌面工具：根据飞行/撞击工况重建二维毁伤场，并提供精度评估、可信度检测、可视化和瞄准点优化能力。项目同时具备完整的工程化支撑——模型元数据追溯、SQLite 任务/结果管理、后台任务状态机、批量预测、统一日志与错误体系、数值回归测试、双平台 CI 与 Windows 桌面交付（见下文[软件架构](#软件架构-software-architecture)与[工程化特性](#工程化特性-engineering-features)）。
+![DamageLab](src/damage_gui/webapp/static/assets/damagelab-icon.png)
+
+**中文** · [English](README.en.md)
+
+这是一个面向仿真毁伤数据的工程化预测工作台：根据飞行/撞击工况重建二维毁伤场，并提供精度评估、可信度检测、可视化和瞄准点优化能力。产品同时提供 Windows 桌面 GUI、命令行工具和 FastAPI Web 服务，适合研究验证、批量计算与可追溯交付。
+
+桌面端支持在运行时切换 **中文 / English**；语言只影响展示层，不改变模型文件、CSV/SQLite 数据格式或科学计算结果。项目同时具备模型元数据追溯、SQLite 任务/结果管理、后台任务状态机、批量预测、统一日志与错误体系、数值回归测试、双平台 CI 与 Windows 桌面交付。
 
 **英文定位**：Centroid-Aligned POD-RBF Surrogate Model for Fast Reconstruction and Assessment of High-Dimensional Damage Fields
 
@@ -65,10 +71,40 @@ Storage / Files               SQLite 追溯库（models / jobs / prediction_resu
 - **可复现的结构化验证**：五种验证模式（随机留出 / 三种整层留出 / 角落外推）+ 固定随机种子。
 - **批量预测**：CSV 输入/输出；行级失败隔离（单行出错不中断批次）；取消保留已完成行；每行输出含模型版本、OOD 可信度、真值对照指标与耗时；GUI 与 CLI 双入口。
 - **统一日志与错误体系**：控制台 + 轮转文件日志；`DamageGuiError` 错误分层，GUI 只展示友好消息，完整 traceback 进日志文件。
-- **自动化测试**：147 个 unittest 用例（算法、指标、端到端管线、存储、任务状态机、批量、CLI），全合成数据、无私有数据依赖。
+- **自动化测试**：181 个 unittest 用例（算法、指标、端到端管线、存储、任务状态机、批量、CLI、Web API、DPI/无头导入），全合成数据、无私有数据依赖。
 - **数值回归测试**：固定种子合成集上的黄金值对比（预测场 / POD 模态 / OOD 分级 / 核心指标）；容差依据双进程实测漂移（=0.0）设定，CI 双平台运行为最终权威；禁止为变绿随意放宽。
 - **Windows/Linux 双平台 CI**：`ruff → 单元+数值回归测试 → Windows PyInstaller 真实构建（校验 exe 产物）→ artifact 上传`；仅 tag 推送才发布 Release。
 - **Windows 桌面交付**：PyInstaller onedir 发布包（`scripts/build_release.bat`，CI 与本地同一路径）。
+
+## 完整技术栈（Technology Stack）
+
+| 层级 | 技术 | 用途 |
+|---|---|---|
+| 语言与运行时 | Python 3.10–3.12 | 科学计算、桌面端、CLI 与 Web 服务 |
+| 桌面 UI | Tkinter / ttk、Windows ctypes DPI API | 原生 Windows 工作台、字体与多显示器 DPI 适配 |
+| 科学计算 | NumPy、SciPy、Pandas、scikit-learn、joblib | 矩阵处理、滤波、插值、降阶、数据与模型持久化 |
+| 降阶与代理模型 | POD/PCA、质心对齐 RBF | 高维毁伤场快速重建与空间位移解耦 |
+| 评估与可信度 | Raw/Smoothed 指标、IoU/Dice、OOD 凸包/邻域检测 | 数值精度、空间形状和外推风险评估 |
+| 可视化 | Matplotlib、TkAgg、PNG 高 DPI 渲染 | 热力图、误差场、瞄准优化结果 |
+| 服务端 | FastAPI、Pydantic、Uvicorn、httpx2 | 健康检查、模型、预测、批量、历史和结果 API |
+| Web 前端 | 原生 HTML / CSS / JavaScript | 无构建依赖的工程化浏览器工作台 |
+| 数据与追溯 | SQLite、CSV、JSON sidecar、轮转日志 | 模型、任务、结果、输入和版本追溯 |
+| 交付与部署 | PyInstaller onedir、Docker、Docker Compose、Nginx | Windows 桌面发布、非 root Web 容器、HTTPS 反代 |
+| 质量保障 | unittest、ruff、GitHub Actions、数值黄金值回归 | 静态检查、双平台测试、构建和科学结果稳定性 |
+
+## 产品界面与国际化
+
+桌面端使用当前真实的四栏工程工作台：导航、上下文属性、Matplotlib 科学视口和结果追溯面板。工具栏右侧的 **语言 / Language** 选择器可即时切换中英文；模型类型、验证方式等内部值保持稳定。
+
+中文界面：
+
+![DamageLab 中文桌面工作台](examples/screenshots/gui.png)
+
+English interface:
+
+![DamageLab English desktop workbench](examples/screenshots/gui_en.png)
+
+Web 端和桌面端共用 `DL` 品牌图标。图标资源位于 `src/damage_gui/gui/assets/` 与 `src/damage_gui/webapp/static/assets/`，PyInstaller 构建会将桌面图标一并打包。
 
 ## 模型追溯链（Model Traceability）
 
@@ -122,21 +158,28 @@ SQLite：models ← jobs(training) ← jobs(batch_prediction) ← prediction_res
 │   │   └── aim.py             # 瞄准点优化（独立数学模块）
 │   ├── visualization/
 │   │   └── plots.py           # 热力图与误差场渲染
-│   └── gui/
-│       ├── main_window.py     # Tkinter 主窗口（TaskManager 后台任务）
-│       ├── presentation.py    # 选项映射与指标展示文案
-│       ├── resources.py       # 源码/打包双模式资源路径
-│       └── widgets.py         # 通用小部件工具
+│   ├── gui/
+│   │   ├── main_window.py     # Tkinter 主窗口（TaskManager 后台任务）
+│   │   ├── i18n.py             # 中文/English 运行时翻译目录
+│   │   ├── assets/             # DL PNG/ICO 品牌图标
+│   │   ├── presentation.py    # 选项映射与指标展示文案
+│   │   ├── resources.py       # 源码/打包双模式资源路径
+│   │   └── widgets.py         # 通用小部件工具
+│   └── webapp/
+│       ├── app.py              # FastAPI 应用入口与 REST 路由装配
+│       ├── routes/             # health / models / prediction / batch / history
+│       └── static/             # 无构建依赖的浏览器工作台与品牌资源
 ├── scripts/
 │   ├── build.bat              # 常规 PyInstaller 构建脚本
 │   ├── build_release.bat      # 轻量版 Windows 发布构建脚本
+│   ├── capture_gui_screenshots.py # 生成 README 使用的真实 GUI 截图
 │   ├── batch_predict.py       # 批量预测入口（CLI 兼容封装）
 │   ├── regen_regression_golden.py  # 数值回归黄金值再生成（受控）
 │   ├── generate_results.py    # 从本地数据复现示例结果
 │   ├── ablation_study.py      # 消融实验（降噪/对齐/POD 各自的贡献）
 │   ├── validation_study.py    # 五种结构化验证汇总表
 │   └── pod_sweep.py           # POD 模态数 K 扫描与性能对比
-├── tests/                     # 147 个用例（单元 / 端到端 / 数值回归 + 黄金值）
+├── tests/                     # 181 个用例（单元 / 端到端 / 数值回归 + 黄金值）
 ├── docs/                      # 阶段验收报告与简历材料
 ├── .github/workflows/test.yml # CI（lint → 双平台测试 → Windows 构建 → artifact）
 ├── pyproject.toml             # 包元数据、依赖与 ruff 配置
@@ -179,11 +222,22 @@ python -m damage_gui.cli batch --model damage_model_F.joblib `
 
 批量预测行级失败不中断批次（失败行以 FAILED + 错误信息记录）；退出码：0 全部成功、1 存在失败行或取消、2 输入错误。`scripts/batch_predict.py` 保留为兼容入口。
 
-## 图形界面
+### Web 服务（FastAPI）
 
-GUI 支持数据目录选择、模型类型与验证方式选择、后台线程训练（可取消）、工况输入、毁伤场可视化、OOD 可信度显示、CSV/PNG 导出以及瞄准点优化（CEP 圆形散布 / REP-DEP 椭圆散布，支持相关系数 ρ 与主轴旋转角 θ 输入，结果摘要显示等效 σx、σy、ρ）。
+启动 API 与浏览器工作台：
 
-![毁伤场预测 GUI](examples/screenshots/gui.png)
+```powershell
+$env:PYTHONPATH = "src"
+uvicorn damage_gui.webapp.app:app --host 127.0.0.1 --port 8000
+```
+
+打开 `http://127.0.0.1:8000/` 即可使用 Web 界面；`/docs` 提供 OpenAPI 文档。服务层与桌面端共享训练、预测、批量、历史和结果查询逻辑，默认只绑定本机地址，部署到服务器时请配合反向代理和访问控制。
+
+仓库也提供 Docker Compose 配置，可用于本地或服务器部署：
+
+```powershell
+docker compose up --build
+```
 
 ## 真实示例结果
 
@@ -290,7 +344,7 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 ```
 
-共 **147 个用例**，全部基于合成数据（不依赖私有真实数据）：
+共 **181 个用例**，全部基于合成数据（不依赖私有真实数据）：
 
 - 散布参数转换（CEP / REP-DEP → σ）、概率核归一化、零散布极限；相关散布核（ρ ≠ 0）与旋转椭圆协方差
 - Monte Carlo 期望毁伤效能 vs 解析卷积的一致性（独立/相关散布两组）
@@ -312,7 +366,7 @@ CI（`.github/workflows/test.yml`）四段流水线，失败可按 job 定位阶
 ```text
 push / PR
  ├─ lint   (Ubuntu)            ruff check
- ├─ test   (Windows + Ubuntu)  全部 147 个用例（含数值回归双平台对比）
+ ├─ test   (Windows + Ubuntu)  全部 181 个用例（含数值回归双平台对比）
  └─ build  (Windows)           真实运行 PyInstaller 构建 → 校验 exe 产物 → 上传 artifact
      └─ release                仅 tag 推送时把构建产物挂到 GitHub Release
 ```

@@ -4,6 +4,7 @@ The scientific ``Config`` remains the persisted model configuration.  This
 module provides a GUI-facing view of the legacy ``ui_*`` values so the
 presentation layer does not need to know about model configuration fields.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -76,7 +77,8 @@ class FontFamilies:
 
 
 def resolve_font_families(
-    available: Iterable[str], theme: Theme = THEME,
+    available: Iterable[str],
+    theme: Theme = THEME,
 ) -> FontFamilies:
     """Choose the preferred Windows families with deterministic fallbacks."""
     installed = {str(name).casefold(): str(name) for name in available}

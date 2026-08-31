@@ -8,8 +8,10 @@
 一致；resource_path 缺省锚定 runtime 模块目录，GUI 资源（图标）须
 显式传入 gui 目录以保持解析位置不变。
 """
+
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from damage_gui.runtime.paths import app_base_dir, resource_path  # noqa: F401
@@ -17,9 +19,22 @@ from damage_gui.runtime.paths import app_base_dir, resource_path  # noqa: F401
 
 def resolve_icon_paths() -> tuple[Path | None, Path | None]:
     gui_dir = Path(__file__).parent
-    ico_path = resource_path("damage_app_icon.ico", base_dir=gui_dir)
-    png_path = resource_path("damage_app_icon.png", base_dir=gui_dir)
-    return (
-        ico_path if ico_path.exists() else None,
-        png_path if png_path.exists() else None,
+    candidates = (
+        gui_dir / "assets" / "damagelab-icon",
+        gui_dir / "damagelab-icon",
+        gui_dir / "damage_app_icon",
     )
+    for stem in candidates:
+        if getattr(sys, "frozen", False):
+            resource_stem = Path("damage_gui") / "gui" / "assets" / stem.name
+            ico_path = resource_path(f"{resource_stem}.ico")
+            png_path = resource_path(f"{resource_stem}.png")
+        else:
+            ico_path = resource_path(f"{stem.name}.ico", base_dir=stem.parent)
+            png_path = resource_path(f"{stem.name}.png", base_dir=stem.parent)
+        if ico_path.exists() or png_path.exists():
+            return (
+                ico_path if ico_path.exists() else None,
+                png_path if png_path.exists() else None,
+            )
+    return None, None

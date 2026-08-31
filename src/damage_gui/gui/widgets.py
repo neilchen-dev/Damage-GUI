@@ -1,4 +1,5 @@
 """GUI 通用小部件工具：圆角矩形绘制、自适应换行标签。"""
+
 from __future__ import annotations
 
 import tkinter as tk
@@ -19,9 +20,30 @@ def rounded_rect(
     """在 Canvas 上绘制圆角矩形（smooth polygon 近似）。"""
     radius = min(radius, (x2 - x1) / 2, (y2 - y1) / 2)
     points = [
-        x1 + radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius,
-        x2, y2 - radius, x2, y2, x2 - radius, y2, x1 + radius, y2,
-        x1, y2, x1, y2 - radius, x1, y1 + radius, x1, y1,
+        x1 + radius,
+        y1,
+        x2 - radius,
+        y1,
+        x2,
+        y1,
+        x2,
+        y1 + radius,
+        x2,
+        y2 - radius,
+        x2,
+        y2,
+        x2 - radius,
+        y2,
+        x1 + radius,
+        y2,
+        x1,
+        y2,
+        x1,
+        y2 - radius,
+        x1,
+        y1 + radius,
+        x1,
+        y1,
     ]
     return canvas.create_polygon(points, smooth=True, **kwargs)
 
@@ -46,7 +68,7 @@ def compact_path(path: str | Path, max_chars: int = 42) -> str:
     candidate = f"…{separator}{tail}"
     if len(candidate) <= max_chars:
         return candidate
-    return f"…{text[-(max_chars - 1):]}"
+    return f"…{text[-(max_chars - 1) :]}"
 
 
 def bind_tooltip(

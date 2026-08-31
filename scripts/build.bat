@@ -23,6 +23,9 @@ pyinstaller ^
   --clean ^
   --onedir ^
   --name "DamageEfficiencyApp" ^
+  --icon "src\damage_gui\gui\assets\damagelab-icon.ico" ^
+  --add-data "src\damage_gui\gui\assets\damagelab-icon.ico;damage_gui\gui\assets" ^
+  --add-data "src\damage_gui\gui\assets\damagelab-icon.png;damage_gui\gui\assets" ^
   --paths "src" ^
   "src\damage_gui\desktop.py"
 
@@ -42,6 +45,7 @@ echo.
 echo === Copying data and models ===
 xcopy /E /I /Y /Q "data" "dist\DamageEfficiencyApp\data" >nul
 copy /Y "README.md" "dist\DamageEfficiencyApp\" >nul
+copy /Y "README.en.md" "dist\DamageEfficiencyApp\" >nul
 for %%f in (damage_model_F.joblib damage_model_M.joblib damage_model_P.joblib) do (
     if exist "%%f" copy /Y "%%f" "dist\DamageEfficiencyApp\" >nul
 )

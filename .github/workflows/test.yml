@@ -39,8 +39,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Web tests are optional for the desktop runtime but are part of CI.
+      - name: Install optional Web test dependencies
+        run: pip install -e ".[web]"
+
       # 含单元测试与数值回归测试（Windows/Linux 双平台黄金值对比）
-      - name: Unit and numerical regression tests
+      - name: Run unit and numerical regression tests
         env:
           PYTHONPATH: src
         run: python -m unittest discover -s tests -v

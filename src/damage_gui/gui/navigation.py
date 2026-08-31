@@ -1,9 +1,12 @@
 """Compact navigation tree for the desktop workbench."""
+
 from __future__ import annotations
 
 import tkinter as tk
 from collections.abc import Callable
 from tkinter import ttk
+
+from damage_gui.gui.i18n import Translator
 
 NAVIGATION_LABELS = {
     "dataset": "Dataset",
@@ -16,19 +19,29 @@ NAVIGATION_LABELS = {
     "export": "Export",
 }
 
+NAVIGATION_KEYS = tuple(NAVIGATION_LABELS)
+
 
 class NavigationPanel(ttk.Frame):
     """Tree-based navigation that switches the contextual inspector."""
 
-    def __init__(self, parent: tk.Misc, on_select: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        parent: tk.Misc,
+        on_select: Callable[[str], None],
+        *,
+        translator: Translator | None = None,
+    ) -> None:
         super().__init__(parent, style="Pane.TFrame", padding=(8, 8, 6, 8))
+        self.translator = translator or Translator()
         self._on_select = on_select
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
-        ttk.Label(self, text="Navigation", style="Section.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(0, 6)
+        self.title_label = ttk.Label(
+            self, text=self.translator.t("navigation.title"), style="Section.TLabel"
         )
+        self.title_label.grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.tree = ttk.Treeview(
             self,
             show="tree",
@@ -39,15 +52,34 @@ class NavigationPanel(ttk.Frame):
         self.tree.grid(row=1, column=0, sticky="nsew")
         self.tree.bind("<<TreeviewSelect>>", self._handle_select)
 
-        self._add_section("project", "Project", ("dataset", "model", "validation"))
-        self._add_section("analysis", "Analysis", ("prediction", "batch", "aim"))
-        self._add_section("results", "Results", ("history", "export"))
+        self._sections = {
+            "project": ("navigation.project", ("dataset", "model", "validation")),
+            "analysis": ("navigation.analysis", ("prediction", "batch", "aim")),
+            "results": ("navigation.results", ("history", "export")),
+        }
+        for section_id, (title_key, children) in self._sections.items():
+            self._add_section(section_id, title_key, children)
         self.select("dataset")
+        self.translator.subscribe(self.apply_language)
 
-    def _add_section(self, section_id: str, title: str, children: tuple[str, ...]) -> None:
-        self.tree.insert("", "end", iid=section_id, text=title, open=True, tags=("section",))
+    def _add_section(self, section_id: str, title_key: str, children: tuple[str, ...]) -> None:
+        self.tree.insert(
+            "",
+            "end",
+            iid=section_id,
+            text=self.translator.t(title_key),
+            open=True,
+            tags=("section",),
+        )
         for key in children:
-            self.tree.insert(section_id, "end", iid=key, text=NAVIGATION_LABELS[key])
+            self.tree.insert(section_id, "end", iid=key, text=self.translator.t(f"nav.{key}"))
+
+    def apply_language(self) -> None:
+        self.title_label.configure(text=self.translator.t("navigation.title"))
+        for section_id, (title_key, children) in self._sections.items():
+            self.tree.item(section_id, text=self.translator.t(title_key))
+            for key in children:
+                self.tree.item(key, text=self.translator.t(f"nav.{key}"))
 
     def _handle_select(self, _event: object = None) -> None:
         selected = self.tree.selection()

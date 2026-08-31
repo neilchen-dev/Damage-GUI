@@ -21,7 +21,7 @@ WORKDIR /opt/damagelab
 COPY requirements-web.lock ./
 RUN python -m pip install --no-cache-dir --only-binary=:all: -r requirements-web.lock
 
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml README.md README.en.md LICENSE ./
 COPY src ./src
 RUN python -m pip install --no-cache-dir --no-deps .
 

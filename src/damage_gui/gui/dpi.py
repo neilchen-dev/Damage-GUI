@@ -4,6 +4,7 @@ The module intentionally does not import Tkinter.  That keeps the helpers safe
 to import from headless code and lets the desktop entry point opt into DPI
 awareness before it creates the first ``Tk`` instance.
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -80,10 +81,14 @@ def enable_windows_dpi_awareness() -> DpiAwarenessResult:
                 return DpiAwarenessResult("per-monitor-v2", True, "SetProcessDpiAwarenessContext")
             error = ctypes.get_last_error()
             if error == ERROR_ACCESS_DENIED:
-                return DpiAwarenessResult("already-configured", True,
-                                          "SetProcessDpiAwarenessContext")
-            if error not in (ERROR_INVALID_FUNCTION, ERROR_INVALID_PARAMETER,
-                             ERROR_CALL_NOT_IMPLEMENTED):
+                return DpiAwarenessResult(
+                    "already-configured", True, "SetProcessDpiAwarenessContext"
+                )
+            if error not in (
+                ERROR_INVALID_FUNCTION,
+                ERROR_INVALID_PARAMETER,
+                ERROR_CALL_NOT_IMPLEMENTED,
+            ):
                 LOGGER.debug("SetProcessDpiAwarenessContext failed with WinError %s", error)
         except (AttributeError, ctypes.ArgumentError, OSError) as exc:
             LOGGER.debug("SetProcessDpiAwarenessContext unavailable: %s", exc)

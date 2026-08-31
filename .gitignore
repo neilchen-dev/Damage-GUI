@@ -33,6 +33,14 @@ dist/dist/
 *.csv
 *.png
 
+# Product screenshots and brand assets
+!examples/screenshots/*.png
+!src/damage_gui/gui/assets/
+!src/damage_gui/gui/assets/*.ico
+!src/damage_gui/gui/assets/*.png
+!src/damage_gui/webapp/static/assets/
+!src/damage_gui/webapp/static/assets/*.png
+
 # Local environment and secrets
 .env
 .env.*

@@ -5,6 +5,7 @@ calculation, persistence, validation, and task execution remain outside this
 module; this class translates user actions into service calls and renders the
 structured results.
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,13 +16,14 @@ from typing import TYPE_CHECKING
 
 import matplotlib
 
-from damage_gui.config import APP_TITLE, CONDITION_LIMITS, CONFIG, Config
+from damage_gui.config import CONDITION_LIMITS, CONFIG, Config
 from damage_gui.errors import DataValidationError, TaskStateError
 from damage_gui.gui.dpi import (
     enable_windows_dpi_awareness,
     install_tk_scaling_monitor,
     sync_tk_scaling,
 )
+from damage_gui.gui.i18n import Translator
 from damage_gui.gui.navigation import NAVIGATION_LABELS
 from damage_gui.gui.panels import (
     AimPanel,
@@ -33,13 +35,16 @@ from damage_gui.gui.panels import (
     PredictionPanel,
     ValidationPanel,
 )
-from damage_gui.gui.presentation import MODEL_TYPE_CHOICES, VALIDATION_CHOICES, choice_value
+from damage_gui.gui.presentation import (
+    choice_value,
+    model_type_choices,
+    validation_choices,
+)
 from damage_gui.gui.resources import app_base_dir, resolve_icon_paths
 from damage_gui.gui.styles import configure_styles
 from damage_gui.gui.theme import Theme
 from damage_gui.gui.workbench import WorkbenchShell
 from damage_gui.logging_setup import setup_logging
-from damage_gui.model.validation import VALIDATION_LABELS
 from damage_gui.services.conditions import validate_condition
 from damage_gui.storage.db import resolve_db_path
 from damage_gui.tasks import TaskEvent, TaskManager, TaskStatus
@@ -64,20 +69,21 @@ class DamagePredictionGUI:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title(APP_TITLE)
+        self.translator = Translator()
+        self.root.title(self.translator.t("app.title"))
         self.root.geometry("1600x920")
         self.root.minsize(1280, 780)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.data_dir_var = tk.StringVar(value=str(app_base_dir() / "data"))
         self.level_var = tk.StringVar(value="F")
-        self.model_type_var = tk.StringVar(value=MODEL_TYPE_CHOICES[0][0])
+        self.model_type_var = tk.StringVar(value=model_type_choices(self.translator)[0][0])
         self.pod_components_var = tk.StringVar(value=str(CONFIG.pod_n_components))
-        self.validation_var = tk.StringVar(value=VALIDATION_CHOICES[0][0])
+        self.validation_var = tk.StringVar(value=validation_choices(self.translator)[0][0])
         self.h_var = tk.StringVar(value="0.0")
         self.v_var = tk.StringVar(value="150.0")
         self.deg_var = tk.StringVar(value="20.0")
-        self.status_var = tk.StringVar(value="请选择数据目录并训练模型。")
+        self.status_var = tk.StringVar(value=self.translator.t("status.initial"))
 
         self.bundle: ModelBundle | None = None
         self.service: DamageModelService | None = None
@@ -147,9 +153,11 @@ class DamagePredictionGUI:
         self.workbench = WorkbenchShell(
             self.root,
             theme=self.theme,
+            translator=self.translator,
             callbacks=callbacks,
             on_navigate=self._navigate,
             on_view_change=self._on_view_change,
+            on_language=self._set_language,
         )
         self.navigation = self.workbench.navigation
         self.properties = self.workbench.properties
@@ -172,6 +180,7 @@ class DamagePredictionGUI:
             data_dir_var=self.data_dir_var,
             level_var=self.level_var,
             on_browse=self.on_browse_data,
+            translator=self.translator,
         )
         self.model_panel = ModelPanel(
             self.properties.body,
@@ -182,9 +191,10 @@ class DamagePredictionGUI:
             on_cancel=self.on_cancel_training,
             on_load=self.on_load_model,
             on_save=self.on_save_model,
+            translator=self.translator,
         )
         self.validation_panel = ValidationPanel(
-            self.properties.body, validation_var=self.validation_var
+            self.properties.body, validation_var=self.validation_var, translator=self.translator
         )
         self.prediction_panel = PredictionPanel(
             self.properties.body,
@@ -192,6 +202,7 @@ class DamagePredictionGUI:
             v_var=self.v_var,
             deg_var=self.deg_var,
             on_predict=self.on_predict,
+            translator=self.translator,
         )
         self.batch_panel = BatchPanel(
             self.properties.body,
@@ -199,6 +210,7 @@ class DamagePredictionGUI:
             on_browse=self.on_browse_batch_csv,
             on_run=self.on_run_batch,
             on_cancel=lambda: self.task_manager.cancel("batch"),
+            translator=self.translator,
         )
         self.aim_panel = AimPanel(
             self.properties.body,
@@ -209,10 +221,16 @@ class DamagePredictionGUI:
             rho_var=self.aim_rho_var,
             theta_var=self.aim_theta_var,
             on_optimize=self.on_optimize_aim,
+            translator=self.translator,
         )
-        self.history_panel = HistoryPanel(self.properties.body, db_path=str(self._db_path))
+        self.history_panel = HistoryPanel(
+            self.properties.body, db_path=str(self._db_path), translator=self.translator
+        )
         self.export_panel = ExportPanel(
-            self.properties.body, on_csv=self.on_export_csv, on_png=self.on_export_png
+            self.properties.body,
+            on_csv=self.on_export_csv,
+            on_png=self.on_export_png,
+            translator=self.translator,
         )
         for key, panel in (
             ("dataset", self.dataset_panel),
@@ -230,7 +248,31 @@ class DamagePredictionGUI:
         if key not in NAVIGATION_LABELS:
             return
         self.navigation.select(key)
-        self.properties.show(key, NAVIGATION_LABELS[key])
+        self.properties.show(key, self.translator.t(f"nav.{key}"))
+
+    def _set_language(self, language: str) -> None:
+        model_type = self._selected_model_type()
+        validation_mode = self._selected_validation_mode()
+        if not self.translator.set_language(language):
+            return
+        self.root.title(self.translator.t("app.title"))
+        self.model_type_var.set(
+            next(
+                label for label, value in model_type_choices(self.translator) if value == model_type
+            )
+        )
+        self.validation_var.set(
+            next(
+                label
+                for label, value in validation_choices(self.translator)
+                if value == validation_mode
+            )
+        )
+        selected = self.navigation.tree.selection()
+        self._navigate(selected[0] if selected and selected[0] in NAVIGATION_LABELS else "dataset")
+        self._sync_visualization_context()
+        self._update_model_status()
+        self._set_busy(self.task_manager.is_busy())
 
     def _on_view_change(self, key: str) -> None:
         figure = self.visualization.figures.get(key)
@@ -242,22 +284,26 @@ class DamagePredictionGUI:
         if self.visualization.current_view == "aim":
             if self.current_aim_result is None:
                 self.visualization.set_context(
-                    "Damage Field — Aim Optimization", "Run Optimize after a prediction"
+                    self.translator.t("visualization.aim_title"),
+                    self.translator.t("visualization.aim_empty"),
                 )
                 return
             result = self.current_aim_result
             self.visualization.set_context(
-                "Damage Field — Aim Optimization",
+                self.translator.t("visualization.aim_title"),
                 f"{result.spread_mode} · best point ({result.best_x:.1f}, {result.best_y:.1f}) m",
             )
         elif self.current_condition is not None and self.current_prediction is not None:
             condition = self.current_condition
             self.visualization.set_context(
-                "Damage Field — Single Prediction",
+                self.translator.t("visualization.single_title"),
                 f"h = {condition.h:g} m · v = {condition.v:g} m/s · θ = {condition.deg:g}°",
             )
         else:
-            self.visualization.set_context("Damage Field", "No prediction yet.")
+            self.visualization.set_context(
+                self.translator.t("visualization.title"),
+                self.translator.t("visualization.no_prediction"),
+            )
 
     def _stop_current_task(self) -> None:
         cancelled = False
@@ -404,10 +450,13 @@ class DamagePredictionGUI:
         for key in ("triple", "full", "aim"):
             self.visualization.clear(key)
         self.visualization.set_view("triple")
-        self.visualization.set_context("Damage Field", "No prediction yet.")
+        self.visualization.set_context(
+            self.translator.t("visualization.title"),
+            self.translator.t("visualization.no_prediction"),
+        )
         self.results.reset()
-        self.prediction_panel.set_reliability("No prediction yet.")
-        self.aim_panel.set_summary("No optimization yet.")
+        self.prediction_panel.set_reliability(self.translator.t("status.no_prediction"))
+        self.aim_panel.set_summary(self.translator.t("status.no_optimization"))
 
     # ---------- Input mapping ----------
 
@@ -434,10 +483,18 @@ class DamagePredictionGUI:
             raise
 
     def _selected_model_type(self) -> str:
-        return choice_value(MODEL_TYPE_CHOICES, self.model_type_var.get(), "rbf")
+        return choice_value(model_type_choices(self.translator), self.model_type_var.get(), "rbf")
 
     def _selected_validation_mode(self) -> str:
-        return choice_value(VALIDATION_CHOICES, self.validation_var.get(), "random")
+        return choice_value(
+            validation_choices(self.translator), self.validation_var.get(), "random"
+        )
+
+    def _validation_label(self, mode: str) -> str:
+        return next(
+            (label for label, value in validation_choices(self.translator) if value == mode),
+            mode,
+        )
 
     # ---------- Results and model context ----------
 
@@ -452,44 +509,46 @@ class DamagePredictionGUI:
             None if p95_hybrid is None or pd.isna(p95_hybrid) else f"{p95_hybrid:.2%}",
         )
         if mean_re is None or p95_hybrid is None:
-            self.validation_panel.set_result("No validation metrics available.")
+            self.validation_panel.set_result(self.translator.t("status.no_validation"))
         else:
             target = self._active_config().relative_error_target
             self.validation_panel.set_result(
-                f"Mean relative error: {mean_re:.2%}\n"
-                f"P95 hybrid error: {p95_hybrid:.2%}\n"
-                f"Target: < {target:.0%}"
+                self.translator.t("validation.summary", mean=mean_re, p95=p95_hybrid, target=target)
             )
 
     def _update_model_status(self) -> None:
         if self.bundle is None:
-            self.model_panel.set_model_status("No model loaded.")
+            self.model_panel.set_model_status(self.translator.t("status.no_model"))
             return
         bundle = self.bundle
         model = bundle.model
         lines = [
             f"{getattr(model, 'model_name', type(model).__name__)}",
-            f"Level {bundle.level} · {len(bundle.train_conditions)} train / "
-            f"{len(bundle.test_conditions)} test",
+            self.translator.t(
+                "model.level_samples",
+                level=bundle.level,
+                train=len(bundle.train_conditions),
+                test=len(bundle.test_conditions),
+            ),
         ]
         lines.append(
-            f"Validation: {VALIDATION_LABELS.get(bundle.validation_mode, bundle.validation_mode)}"
+            self.translator.t(
+                "model.validation", label=self._validation_label(bundle.validation_mode)
+            )
         )
         metadata = getattr(bundle, "metadata", None)
         if metadata is not None:
-            lines.append(f"ID: {metadata.model_id[:8]}")
+            lines.append(self.translator.t("model.id", id=metadata.model_id[:8]))
         else:
-            lines.append("Legacy model without metadata")
+            lines.append(self.translator.t("model.legacy"))
         if self._last_train_time is not None:
-            lines.append(f"Training: {self._last_train_time:.1f} s")
+            lines.append(self.translator.t("model.training", seconds=self._last_train_time))
         self.model_panel.set_model_status("\n".join(lines))
 
     def _update_results_prediction(self, result: PredictionResult) -> None:
         self.results.set_value("maximum", f"{result.peak_intensity:.4f}")
         self.results.set_value("area", f"{result.damage_area_ratio:.2%}")
-        self.results.set_value(
-            "grid", f"{result.prediction.shape[1]}×{result.prediction.shape[0]}"
-        )
+        self.results.set_value("grid", f"{result.prediction.shape[1]}×{result.prediction.shape[0]}")
         metrics = result.truth_comparison_metrics
         mean_re = float(metrics["MeanRelativeError"]) if metrics else None
         p95_hybrid = float(metrics["P95HybridError"]) if metrics else None
@@ -499,25 +558,40 @@ class DamagePredictionGUI:
         if report is None:
             for key in ("confidence", "ood_distance", "inside_hull", "local_support"):
                 self.results.set_value(key, None)
-            self.prediction_panel.set_reliability("No OOD report available.")
+            self.prediction_panel.set_reliability(self.translator.t("status.no_ood"))
         else:
-            self.results.set_value("confidence", report.level_label)
+            confidence_key = {
+                "high": "ood.high",
+                "medium": "ood.medium",
+                "low": "ood.low",
+            }.get(report.level, "common.unknown")
+            confidence = self.translator.t(confidence_key)
+            self.results.set_value("confidence", confidence)
             self.results.set_value("ood_distance", f"{report.distance:.3f}")
             inside_hull = (
-                "Yes" if report.in_hull is True
-                else "No" if report.in_hull is False else None
+                self.translator.t("common.yes")
+                if report.in_hull is True
+                else self.translator.t("common.no")
+                if report.in_hull is False
+                else None
             )
             self.results.set_value("inside_hull", inside_hull)
             local_support = getattr(report, "local_support", None)
             self.results.set_value(
                 "local_support",
-                "Yes" if local_support is True else "No" if local_support is False else None,
+                self.translator.t("common.yes")
+                if local_support is True
+                else self.translator.t("common.no")
+                if local_support is False
+                else None,
             )
-            reliability = [f"{report.level_label} · distance {report.distance:.3f}"]
+            reliability = [
+                self.translator.t("reliability.summary", level=confidence, distance=report.distance)
+            ]
             if report.in_hull is False:
-                reliability.append("Outside the training hull")
+                reliability.append(self.translator.t("reliability.outside"))
             elif local_support is False:
-                reliability.append("Local training support is sparse")
+                reliability.append(self.translator.t("reliability.sparse"))
             self.prediction_panel.set_reliability("\n".join(reliability))
 
         self.results.set_value("elapsed", f"{result.elapsed_ms} ms")
@@ -533,13 +607,13 @@ class DamagePredictionGUI:
 
         target = self._active_config().relative_error_target
         if mean_re is None or pd.isna(mean_re):
-            text = "训练或预测完成后显示结论。"
+            text = self.translator.t("advice.no_metrics")
         elif mean_re < target and p95_hybrid is not None and p95_hybrid < target:
-            text = f"{scope}核心指标全部达标（目标 <{target:.0%}）。可导出结果存档。"
+            text = self.translator.t("advice.pass", scope=scope, target=target)
         elif mean_re < target:
-            text = f"{scope}平均精度达标，但 P95 混合误差超标。建议定位误差并加密附近工况。"
+            text = self.translator.t("advice.p95", scope=scope)
         else:
-            text = f"{scope}核心指标未达标。建议确认数据完整并加密训练工况网格。"
+            text = self.translator.t("advice.fail", scope=scope)
         self.results.set_advice(text)
 
     # ---------- Dataset / model lifecycle ----------
@@ -629,12 +703,8 @@ class DamagePredictionGUI:
         self._update_advice_card(result.mean_relative_error, result.p95_hybrid_error, "测试集")
         validation_note = ""
         if bundle.validation_mode != "random":
-            validation_label = VALIDATION_LABELS.get(
-                bundle.validation_mode, bundle.validation_mode
-            )
-            validation_note = (
-                f" 验证方式: {validation_label}，指标来自未见工况的折外预测。"
-            )
+            validation_label = self._validation_label(bundle.validation_mode)
+            validation_note = f" 验证方式: {validation_label}，指标来自未见工况的折外预测。"
         db_note = "" if result.db_recorded else "（警告：训练结果未写入 SQLite 追溯数据库）"
         core_summary = ""
         if result.mean_relative_error is not None:
@@ -657,7 +727,8 @@ class DamagePredictionGUI:
             if self.bundle is None:
                 raise RuntimeError("请先训练或加载模型")
             output_path = filedialog.asksaveasfilename(
-                title="保存模型", defaultextension=".joblib",
+                title="保存模型",
+                defaultextension=".joblib",
                 filetypes=[("Joblib Model", "*.joblib")],
                 initialfile=f"damage_model_{self.bundle.level}.joblib",
             )
@@ -665,7 +736,8 @@ class DamagePredictionGUI:
                 return
             save_model(self.bundle, output_path)
             note = (
-                "" if getattr(self.bundle, "metadata", None) is not None
+                ""
+                if getattr(self.bundle, "metadata", None) is not None
                 else "（旧版模型，未写入元数据 sidecar）"
             )
             self._set_status(f"模型已保存: {output_path}{note}", kind="ok")
@@ -696,7 +768,8 @@ class DamagePredictionGUI:
             self._update_model_status()
             self._update_advice_card(mean_re, p95_hybrid, "测试集")
             legacy_note = (
-                "" if getattr(bundle, "metadata", None) is not None
+                ""
+                if getattr(bundle, "metadata", None) is not None
                 else "（旧版模型：无元数据追溯信息）"
             )
             self._set_status(f"模型已加载: {model_path}{legacy_note}", kind="ok")
@@ -729,7 +802,8 @@ class DamagePredictionGUI:
             if not parsed.rows:
                 raise DataValidationError("输入 CSV 中没有可预测的合法行")
             output_path = filedialog.asksaveasfilename(
-                title="保存批量预测结果", defaultextension=".csv",
+                title="保存批量预测结果",
+                defaultextension=".csv",
                 filetypes=[("CSV File", "*.csv")],
                 initialfile=Path(csv_path).stem + "_result.csv",
             )
@@ -742,16 +816,20 @@ class DamagePredictionGUI:
 
             def work(ctx) -> BatchReport:
                 return batch_service.run(
-                    bundle, parsed, data_manager=data_manager, output_path=output_path,
-                    db_path=self._db_path, input_source=Path(csv_path).name,
-                    progress=ctx.report_progress, cancel_check=ctx.cancel_check,
+                    bundle,
+                    parsed,
+                    data_manager=data_manager,
+                    output_path=output_path,
+                    db_path=self._db_path,
+                    input_source=Path(csv_path).name,
+                    progress=ctx.report_progress,
+                    cancel_check=ctx.cancel_check,
                 )
 
             self.task_manager.submit("batch", work)
             self._set_busy(True)
             invalid_note = (
-                f"，{len(parsed.invalid)} 行输入无效将标记为失败"
-                if parsed.invalid else ""
+                f"，{len(parsed.invalid)} 行输入无效将标记为失败" if parsed.invalid else ""
             )
             self._set_status(
                 f"正在后台批量预测 {parsed.total} 个工况{invalid_note}，请稍候…",
@@ -815,8 +893,10 @@ class DamagePredictionGUI:
             from damage_gui.visualization.plots import render_full_prediction, render_heatmaps
 
             triple_figure = render_heatmaps(
-                result.truth, result.prediction,
-                display_threshold=config.display_threshold, config=config,
+                result.truth,
+                result.prediction,
+                display_threshold=config.display_threshold,
+                config=config,
             )
             full_figure = render_full_prediction(result.prediction, config)
             self.visualization.set_figure(triple_figure, "triple")
@@ -828,9 +908,11 @@ class DamagePredictionGUI:
             self._update_results_prediction(result)
             self._update_advice_card(
                 float(result.truth_comparison_metrics["MeanRelativeError"])
-                if result.truth_comparison_metrics else None,
+                if result.truth_comparison_metrics
+                else None,
                 float(result.truth_comparison_metrics["P95HybridError"])
-                if result.truth_comparison_metrics else None,
+                if result.truth_comparison_metrics
+                else None,
                 "当前工况",
             )
             ood_note = ""
@@ -851,8 +933,9 @@ class DamagePredictionGUI:
             self._set_status(
                 f"预测完成（耗时 {result.elapsed_ms} ms），{status_note}{ood_note}",
                 kind=(
-                    "info" if result.ood_report is not None
-                    and result.ood_report.is_extrapolation else "ok"
+                    "info"
+                    if result.ood_report is not None and result.ood_report.is_extrapolation
+                    else "ok"
                 ),
             )
             if result.ood_report is not None and result.ood_report.is_extrapolation:
@@ -874,7 +957,8 @@ class DamagePredictionGUI:
             if self.current_prediction is None or self.current_condition is None:
                 raise RuntimeError("请先生成预测结果")
             output_path = filedialog.asksaveasfilename(
-                title="导出预测矩阵 CSV", defaultextension=".csv",
+                title="导出预测矩阵 CSV",
+                defaultextension=".csv",
                 filetypes=[("CSV File", "*.csv")],
                 initialfile=(
                     f"predicted_{self.bundle.level if self.bundle else 'X'}"
@@ -898,8 +982,10 @@ class DamagePredictionGUI:
             if figure is None:
                 raise RuntimeError("请先生成热力图")
             output_path = filedialog.asksaveasfilename(
-                title="导出热力图 PNG", defaultextension=".png",
-                filetypes=[("PNG Image", "*.png")], initialfile="damage_heatmap.png",
+                title="导出热力图 PNG",
+                defaultextension=".png",
+                filetypes=[("PNG Image", "*.png")],
+                initialfile="damage_heatmap.png",
             )
             if not output_path:
                 return
@@ -912,7 +998,7 @@ class DamagePredictionGUI:
 
     def _clear_aim_view(self) -> None:
         self.visualization.clear("aim")
-        self.aim_panel.set_summary("No optimization yet.")
+        self.aim_panel.set_summary(self.translator.t("status.no_optimization"))
 
     def on_optimize_aim(self) -> None:
         try:
@@ -924,14 +1010,18 @@ class DamagePredictionGUI:
                 raise RuntimeError("请先执行毁伤场预测")
             if self.aim_service is None:
                 self.aim_service = AimService()
-            x_axis, y_axis = coordinate_axes(
-                self.current_prediction.shape, self._active_config()
-            )
+            x_axis, y_axis = coordinate_axes(self.current_prediction.shape, self._active_config())
             mode = self.spread_mode_var.get()
             result = self.aim_service.optimize(
-                self.current_prediction, x_axis, y_axis, spread_mode=mode,
-                cep=self.cep_var.get(), rep=self.rep_var.get(), dep=self.dep_var.get(),
-                rho=self.aim_rho_var.get(), theta_deg=self.aim_theta_var.get(),
+                self.current_prediction,
+                x_axis,
+                y_axis,
+                spread_mode=mode,
+                cep=self.cep_var.get(),
+                rep=self.rep_var.get(),
+                dep=self.dep_var.get(),
+                rho=self.aim_rho_var.get(),
+                theta_deg=self.aim_theta_var.get(),
                 reliability=1.0,
             )
             self.current_aim_result = result
@@ -952,7 +1042,8 @@ class DamagePredictionGUI:
                 f"Shift: {result.shift_distance:.1f} m\n{spread_text}"
             )
             mode_label = (
-                f"CEP={self.cep_var.get()} m" if mode == "CEP"
+                f"CEP={self.cep_var.get()} m"
+                if mode == "CEP"
                 else f"REP={self.rep_var.get()} m / DEP={self.dep_var.get()} m"
             )
             if mode != "CEP" and rho:

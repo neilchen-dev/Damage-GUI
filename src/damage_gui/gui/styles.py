@@ -1,4 +1,5 @@
 """ttk style definitions for the desktop workbench."""
+
 from __future__ import annotations
 
 import tkinter as tk
@@ -49,40 +50,82 @@ def configure_styles(root: tk.Misc, theme: Theme = THEME) -> ttk.Style:
     style.configure("Inspector.TFrame", background=theme.panel_bg)
     style.configure("Toolbar.TFrame", background=theme.bg)
     style.configure("Status.TFrame", background=theme.bg)
-    style.configure("PanelTitle.TLabel", background=theme.panel_bg, foreground=theme.text,
-                    font=title_font)
-    style.configure("PanelSubTitle.TLabel", background=theme.panel_bg, foreground=theme.muted,
-                    font=small_chinese_font)
-    style.configure("Section.TLabel", background=theme.panel_bg, foreground=theme.muted,
-                    font=section_font)
-    style.configure("FieldLabel.TLabel", background=theme.panel_bg, foreground=theme.muted,
-                    font=small_latin_font)
-    style.configure("Body.TLabel", background=theme.panel_bg, foreground=theme.text,
-                    font=latin_font)
-    style.configure("Muted.TLabel", background=theme.panel_bg, foreground=theme.muted,
-                    font=small_latin_font)
-    style.configure("MutedChinese.TLabel", background=theme.panel_bg, foreground=theme.muted,
-                    font=small_chinese_font)
-    style.configure("Value.TLabel", background=theme.panel_bg, foreground=theme.text,
-                    font=small_value_font)
-    style.configure("Unit.TLabel", background=theme.panel_bg, foreground=theme.muted,
-                    font=small_latin_font)
-    style.configure("Status.TLabel", background=theme.bg, foreground=theme.text,
-                    font=small_chinese_font)
-    style.configure("StatusValue.TLabel", background=theme.bg, foreground=theme.text,
-                    font=small_value_font)
-    style.configure("Toolbar.TButton", padding=(8, 3), font=small_latin_font,
-                    background=theme.bg, foreground=theme.text, bordercolor=theme.border)
-    style.map("Toolbar.TButton", background=[("active", hover_background),
-                                               ("pressed", pressed_background),
-                                               ("disabled", disabled_background)],
-              foreground=[("disabled", disabled_foreground)])
-    style.configure("ToolbarChinese.TButton", padding=(8, 3), font=small_chinese_font,
-                    background=theme.bg, foreground=theme.text, bordercolor=theme.border)
-    style.map("ToolbarChinese.TButton", background=[("active", hover_background),
-                                                      ("pressed", pressed_background),
-                                                      ("disabled", disabled_background)],
-              foreground=[("disabled", disabled_foreground)])
+    style.configure(
+        "PanelTitle.TLabel", background=theme.panel_bg, foreground=theme.text, font=title_font
+    )
+    style.configure(
+        "PanelSubTitle.TLabel",
+        background=theme.panel_bg,
+        foreground=theme.muted,
+        font=small_chinese_font,
+    )
+    style.configure(
+        "Section.TLabel", background=theme.panel_bg, foreground=theme.muted, font=section_font
+    )
+    style.configure(
+        "FieldLabel.TLabel",
+        background=theme.panel_bg,
+        foreground=theme.muted,
+        font=small_latin_font,
+    )
+    style.configure(
+        "Body.TLabel", background=theme.panel_bg, foreground=theme.text, font=latin_font
+    )
+    style.configure(
+        "Muted.TLabel", background=theme.panel_bg, foreground=theme.muted, font=small_latin_font
+    )
+    style.configure(
+        "MutedChinese.TLabel",
+        background=theme.panel_bg,
+        foreground=theme.muted,
+        font=small_chinese_font,
+    )
+    style.configure(
+        "Value.TLabel", background=theme.panel_bg, foreground=theme.text, font=small_value_font
+    )
+    style.configure(
+        "Unit.TLabel", background=theme.panel_bg, foreground=theme.muted, font=small_latin_font
+    )
+    style.configure(
+        "Status.TLabel", background=theme.bg, foreground=theme.text, font=small_chinese_font
+    )
+    style.configure(
+        "StatusValue.TLabel", background=theme.bg, foreground=theme.text, font=small_value_font
+    )
+    style.configure(
+        "Toolbar.TButton",
+        padding=(8, 3),
+        font=small_latin_font,
+        background=theme.bg,
+        foreground=theme.text,
+        bordercolor=theme.border,
+    )
+    style.map(
+        "Toolbar.TButton",
+        background=[
+            ("active", hover_background),
+            ("pressed", pressed_background),
+            ("disabled", disabled_background),
+        ],
+        foreground=[("disabled", disabled_foreground)],
+    )
+    style.configure(
+        "ToolbarChinese.TButton",
+        padding=(8, 3),
+        font=small_chinese_font,
+        background=theme.bg,
+        foreground=theme.text,
+        bordercolor=theme.border,
+    )
+    style.map(
+        "ToolbarChinese.TButton",
+        background=[
+            ("active", hover_background),
+            ("pressed", pressed_background),
+            ("disabled", disabled_background),
+        ],
+        foreground=[("disabled", disabled_foreground)],
+    )
     try:
         tk_scaling = float(root.tk.call("tk", "scaling"))
     except (tk.TclError, TypeError, ValueError):
@@ -93,49 +136,123 @@ def configure_styles(root: tk.Misc, theme: Theme = THEME) -> ttk.Style:
         toolbar_combo_padding_y = 6
     else:
         toolbar_combo_padding_y = 8
-    style.configure("Toolbar.TCombobox", padding=(4, toolbar_combo_padding_y),
-                    font=small_chinese_font,
-                    fieldbackground=theme.bg, foreground=theme.text, bordercolor=theme.border)
-    style.map("Toolbar.TCombobox", fieldbackground=[("disabled", disabled_background)],
-              foreground=[("disabled", disabled_foreground)])
-    style.configure("Primary.TButton", padding=(8, 3), font=small_latin_font,
-                    background=theme.primary, foreground="#FFFFFF")
-    style.map("Primary.TButton", background=[("active", theme.primary_dark),
-                                               ("pressed", theme.primary_dark),
-                                               ("disabled", "#AEB8C1")],
-              foreground=[("disabled", "#EEF1F3"), ("!disabled", "#FFFFFF")])
-    style.configure("Secondary.TButton", padding=(8, 3), font=small_latin_font,
-                    background=theme.bg, foreground=theme.text,
-                    bordercolor=theme.border)
-    style.map("Secondary.TButton", background=[("active", hover_background),
-                                                 ("pressed", pressed_background),
-                                                 ("disabled", disabled_background)],
-              foreground=[("disabled", disabled_foreground)])
-    style.configure("App.TEntry", padding=(5, 3), font=latin_font, fieldbackground="#FFFFFF",
-                    foreground=theme.text, bordercolor=theme.border)
-    style.map("App.TEntry", fieldbackground=[("disabled", disabled_background)],
-              foreground=[("disabled", disabled_foreground)])
-    style.configure("App.TCombobox", padding=(4, 2), font=latin_font, fieldbackground="#FFFFFF",
-                    foreground=theme.text, bordercolor=theme.border)
-    style.map("App.TCombobox", fieldbackground=[("disabled", disabled_background)],
-              foreground=[("disabled", disabled_foreground)])
-    style.configure("App.TSpinbox", padding=(4, 2), font=latin_font, fieldbackground="#FFFFFF",
-                    foreground=theme.text, bordercolor=theme.border,
-                    arrowcolor=theme.primary)
-    style.map("App.TSpinbox", fieldbackground=[("disabled", disabled_background)],
-              foreground=[("disabled", disabled_foreground)],
-              arrowcolor=[("disabled", disabled_foreground)])
-    style.configure("App.Horizontal.TProgressbar", troughcolor=theme.soft_bg,
-                    background=theme.primary, bordercolor=theme.border,
-                    lightcolor=theme.primary, darkcolor=theme.primary, thickness=7)
     style.configure(
-        "Navigation.Treeview", background=theme.panel_bg, fieldbackground=theme.panel_bg,
-        foreground=theme.text, borderwidth=0, rowheight=24, indent=12, font=small_latin_font,
+        "Toolbar.TCombobox",
+        padding=(4, toolbar_combo_padding_y),
+        font=small_chinese_font,
+        fieldbackground=theme.bg,
+        foreground=theme.text,
+        bordercolor=theme.border,
     )
-    style.map("Navigation.Treeview", background=[("selected", "#DCE6F0")],
-              foreground=[("selected", theme.primary)])
-    style.configure("Navigation.Treeview.Heading", background=theme.panel_bg,
-                    foreground=theme.muted, font=section_font)
+    style.map(
+        "Toolbar.TCombobox",
+        fieldbackground=[("disabled", disabled_background)],
+        foreground=[("disabled", disabled_foreground)],
+    )
+    style.configure(
+        "Primary.TButton",
+        padding=(8, 3),
+        font=small_latin_font,
+        background=theme.primary,
+        foreground="#FFFFFF",
+    )
+    style.map(
+        "Primary.TButton",
+        background=[
+            ("active", theme.primary_dark),
+            ("pressed", theme.primary_dark),
+            ("disabled", "#AEB8C1"),
+        ],
+        foreground=[("disabled", "#EEF1F3"), ("!disabled", "#FFFFFF")],
+    )
+    style.configure(
+        "Secondary.TButton",
+        padding=(8, 3),
+        font=small_latin_font,
+        background=theme.bg,
+        foreground=theme.text,
+        bordercolor=theme.border,
+    )
+    style.map(
+        "Secondary.TButton",
+        background=[
+            ("active", hover_background),
+            ("pressed", pressed_background),
+            ("disabled", disabled_background),
+        ],
+        foreground=[("disabled", disabled_foreground)],
+    )
+    style.configure(
+        "App.TEntry",
+        padding=(5, 3),
+        font=latin_font,
+        fieldbackground="#FFFFFF",
+        foreground=theme.text,
+        bordercolor=theme.border,
+    )
+    style.map(
+        "App.TEntry",
+        fieldbackground=[("disabled", disabled_background)],
+        foreground=[("disabled", disabled_foreground)],
+    )
+    style.configure(
+        "App.TCombobox",
+        padding=(4, 2),
+        font=latin_font,
+        fieldbackground="#FFFFFF",
+        foreground=theme.text,
+        bordercolor=theme.border,
+    )
+    style.map(
+        "App.TCombobox",
+        fieldbackground=[("disabled", disabled_background)],
+        foreground=[("disabled", disabled_foreground)],
+    )
+    style.configure(
+        "App.TSpinbox",
+        padding=(4, 2),
+        font=latin_font,
+        fieldbackground="#FFFFFF",
+        foreground=theme.text,
+        bordercolor=theme.border,
+        arrowcolor=theme.primary,
+    )
+    style.map(
+        "App.TSpinbox",
+        fieldbackground=[("disabled", disabled_background)],
+        foreground=[("disabled", disabled_foreground)],
+        arrowcolor=[("disabled", disabled_foreground)],
+    )
+    style.configure(
+        "App.Horizontal.TProgressbar",
+        troughcolor=theme.soft_bg,
+        background=theme.primary,
+        bordercolor=theme.border,
+        lightcolor=theme.primary,
+        darkcolor=theme.primary,
+        thickness=7,
+    )
+    style.configure(
+        "Navigation.Treeview",
+        background=theme.panel_bg,
+        fieldbackground=theme.panel_bg,
+        foreground=theme.text,
+        borderwidth=0,
+        rowheight=24,
+        indent=12,
+        font=small_latin_font,
+    )
+    style.map(
+        "Navigation.Treeview",
+        background=[("selected", "#DCE6F0")],
+        foreground=[("selected", theme.primary)],
+    )
+    style.configure(
+        "Navigation.Treeview.Heading",
+        background=theme.panel_bg,
+        foreground=theme.muted,
+        font=section_font,
+    )
     style.configure("Treeview", borderwidth=0, font=small_latin_font)
     style.configure("Treeview.Heading", font=section_font)
     style.configure("TSeparator", background=theme.border)

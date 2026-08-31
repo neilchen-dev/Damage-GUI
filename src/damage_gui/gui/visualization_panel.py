@@ -1,4 +1,5 @@
 """Central scientific visualization viewport."""
+
 from __future__ import annotations
 
 import tkinter as tk
@@ -9,34 +10,45 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 from damage_gui.gui.dpi import get_window_dpi
+from damage_gui.gui.i18n import Translator
 
 VIEW_LABELS = {
     "triple": "对比三联图",
     "full": "全视图预测图",
     "aim": "瞄准优化图",
 }
+VIEW_KEYS = {
+    "triple": "visualization.triple",
+    "full": "visualization.full",
+    "aim": "visualization.aim",
+}
 
 
 class VisualizationPanel(ttk.Frame):
     """Header, viewport toolbar, and one resizable Matplotlib canvas."""
 
-    def __init__(self, parent: tk.Misc, on_view_change: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        parent: tk.Misc,
+        on_view_change: Callable[[str], None],
+        *,
+        translator: Translator | None = None,
+    ) -> None:
         super().__init__(parent, style="Pane.TFrame", padding=(10, 8, 10, 8))
+        self.translator = translator or Translator()
         self._on_view_change = on_view_change
         self._current_view = "triple"
         self._toolbar_combo_padding_y: int | None = None
         self.figures: dict[str, Figure | None] = {key: None for key in VIEW_LABELS}
-        self.canvases: dict[str, FigureCanvasTkAgg | None] = {
-            key: None for key in VIEW_LABELS
-        }
+        self.canvases: dict[str, FigureCanvasTkAgg | None] = {key: None for key in VIEW_LABELS}
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
 
         header = ttk.Frame(self, style="Pane.TFrame")
         header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         header.columnconfigure(0, weight=1)
-        self.title_var = tk.StringVar(value="Damage Field")
-        self.subtitle_var = tk.StringVar(value="No prediction yet.")
+        self.title_var = tk.StringVar(value=self.translator.t("visualization.title"))
+        self.subtitle_var = tk.StringVar(value=self.translator.t("visualization.no_prediction"))
         ttk.Label(header, textvariable=self.title_var, style="PanelTitle.TLabel").grid(
             row=0, column=0, sticky="w"
         )
@@ -46,12 +58,15 @@ class VisualizationPanel(ttk.Frame):
 
         toolbar = ttk.Frame(self, style="Toolbar.TFrame", padding=(4, 2))
         toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
-        ttk.Label(toolbar, text="视图", style="Status.TLabel").pack(side="left", padx=(0, 6))
-        self.view_var = tk.StringVar(value=VIEW_LABELS[self._current_view])
+        self.view_label = ttk.Label(
+            toolbar, text=self.translator.t("visualization.view"), style="Status.TLabel"
+        )
+        self.view_label.pack(side="left", padx=(0, 6))
+        self.view_var = tk.StringVar(value=self._view_text(self._current_view))
         self.view_combo = ttk.Combobox(
             toolbar,
             textvariable=self.view_var,
-            values=list(VIEW_LABELS.values()),
+            values=[self._view_text(key) for key in VIEW_LABELS],
             state="readonly",
             width=16,
             style="Toolbar.TCombobox",
@@ -59,7 +74,10 @@ class VisualizationPanel(ttk.Frame):
         self.view_combo.pack(side="left")
         self.view_combo.bind("<<ComboboxSelected>>", self._handle_view_change)
         self.fit_button = ttk.Button(
-            toolbar, text="适配窗口", command=self.redraw_current, style="ToolbarChinese.TButton"
+            toolbar,
+            text=self.translator.t("visualization.fit"),
+            command=self.redraw_current,
+            style="ToolbarChinese.TButton",
         )
         self.fit_button.pack(side="left", padx=(8, 0))
 
@@ -69,7 +87,7 @@ class VisualizationPanel(ttk.Frame):
         self.canvas_host.rowconfigure(0, weight=1)
         self.placeholder = ttk.Label(
             self.canvas_host,
-            text="No prediction yet.",
+            text=self.translator.t("visualization.no_prediction"),
             style="Muted.TLabel",
             anchor="center",
         )
@@ -77,6 +95,20 @@ class VisualizationPanel(ttk.Frame):
         self._update_toolbar_state()
         self.bind("<Configure>", self._refine_toolbar_spacing, add="+")
         self.after_idle(self._refine_toolbar_spacing)
+        self.translator.subscribe(self.apply_language)
+
+    def _view_text(self, key: str) -> str:
+        return self.translator.t(VIEW_KEYS[key])
+
+    def apply_language(self) -> None:
+        self.view_label.configure(text=self.translator.t("visualization.view"))
+        self.fit_button.configure(text=self.translator.t("visualization.fit"))
+        self.view_combo.configure(values=[self._view_text(key) for key in VIEW_LABELS])
+        self.view_var.set(self._view_text(self._current_view))
+        if self.subtitle_var.get() in {"No prediction yet.", "暂无预测结果。"}:
+            self.subtitle_var.set(self.translator.t("visualization.no_prediction"))
+        if self.placeholder.winfo_exists():
+            self.placeholder.configure(text=self.translator.t("visualization.no_prediction"))
 
     def _refine_toolbar_spacing(self, _event: object = None) -> None:
         """Keep the selector and action button optically level at each DPI."""
@@ -99,7 +131,7 @@ class VisualizationPanel(ttk.Frame):
 
     def _handle_view_change(self, _event: object = None) -> None:
         selected = self.view_var.get()
-        key = next((key for key, label in VIEW_LABELS.items() if label == selected), "triple")
+        key = next((key for key in VIEW_LABELS if self._view_text(key) == selected), "triple")
         self.set_view(key)
         self._on_view_change(key)
 
@@ -111,7 +143,7 @@ class VisualizationPanel(ttk.Frame):
         if key not in VIEW_LABELS:
             return
         self._current_view = key
-        self.view_var.set(VIEW_LABELS[key])
+        self.view_var.set(self._view_text(key))
         self._show_current()
 
     def set_figure(self, figure: Figure, key: str) -> None:
@@ -152,7 +184,7 @@ class VisualizationPanel(ttk.Frame):
         if figure is None:
             self.placeholder = ttk.Label(
                 self.canvas_host,
-                text="No prediction yet.",
+                text=self.translator.t("visualization.no_prediction"),
                 style="Muted.TLabel",
                 anchor="center",
             )

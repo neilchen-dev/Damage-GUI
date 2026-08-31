@@ -38,7 +38,14 @@ damage-gui-web = "damage_gui.webapp.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-damage_gui = ["webapp/static/*.html", "webapp/static/*.css", "webapp/static/*.js"]
+damage_gui = [
+    "gui/assets/*.ico",
+    "gui/assets/*.png",
+    "webapp/static/*.html",
+    "webapp/static/*.css",
+    "webapp/static/*.js",
+    "webapp/static/assets/*.png",
+]
 
 [tool.ruff]
 line-length = 100
