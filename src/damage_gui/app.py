@@ -32,7 +32,9 @@ from damage_gui.evaluation.metrics import (  # noqa: F401
 )
 
 # ---- 启动入口 ----
-from damage_gui.gui.main_window import main
+# 注意：Tk GUI 的导入必须延迟到 main() 内——本模块同时承担旧 joblib
+# 反序列化的兼容 re-export（见上），Web/无头运行时会 import damage_gui.app，
+# 不能在模块导入期拉起 tkinter / damage_gui.gui.main_window。
 from damage_gui.model.bundle import (  # noqa: F401
     DamageModelService,
     ModelBundle,
@@ -51,6 +53,14 @@ from damage_gui.visualization.plots import (  # noqa: F401
     render_full_prediction,
     render_heatmaps,
 )
+
+
+def main() -> None:
+    """桌面应用入口（Tk GUI 延迟导入）。"""
+    from damage_gui.gui.main_window import main as run_desktop
+
+    run_desktop()
+
 
 if __name__ == "__main__":
     main()

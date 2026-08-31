@@ -96,6 +96,7 @@ class JobRepository:
         self,
         *,
         kind: str,
+        job_id: str | None = None,
         status: str = "SUCCESS",
         model_id: str | None = None,
         input_source: str | None = None,
@@ -104,7 +105,7 @@ class JobRepository:
         details: dict[str, Any] | None = None,
     ) -> str | None:
         """插入一条任务记录，返回 job_id；失败记录日志并返回 None。"""
-        job_id = uuid.uuid4().hex
+        job_id = job_id or uuid.uuid4().hex
         now = _now_iso()
         try:
             with closing(connect(self.db_path)) as conn:
@@ -165,16 +166,81 @@ class JobRepository:
             _fail("查询 jobs 表", self.db_path, exc)
             return None
 
+    def update_job_state(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        model_id: str | None = None,
+        started_at: str | None = None,
+        finished_at: str | None = None,
+        duration_ms: int | None = None,
+        error_summary: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> bool:
+        """Update a server-owned job lifecycle row without changing its ID."""
+        try:
+            with closing(connect(self.db_path)) as conn:
+                ensure_schema(conn)
+                assignments = ["status = ?"]
+                values: list[Any] = [status]
+                if model_id is not None:
+                    assignments.append("model_id = ?")
+                    values.append(model_id)
+                if started_at is not None:
+                    assignments.append("started_at = ?")
+                    values.append(started_at)
+                if finished_at is not None or status in ("SUCCESS", "FAILED", "CANCELLED"):
+                    assignments.append("finished_at = ?")
+                    values.append(finished_at or _now_iso())
+                if duration_ms is not None:
+                    assignments.append("duration_ms = ?")
+                    values.append(duration_ms)
+                if error_summary is not None or status in ("SUCCESS", "FAILED", "CANCELLED"):
+                    assignments.append("error_summary = ?")
+                    values.append(error_summary)
+                if details is not None:
+                    assignments.append("details_json = ?")
+                    values.append(_dump(details))
+                values.append(job_id)
+                cursor = conn.execute(
+                    f"UPDATE jobs SET {', '.join(assignments)} WHERE id = ?",
+                    values,
+                )
+                conn.commit()
+            return cursor.rowcount == 1
+        except sqlite3.Error as exc:
+            _fail(f"更新 jobs 表（job={job_id}, status={status}）", self.db_path, exc)
+            return False
+
     def recent_jobs(self, limit: int = 20) -> list[dict[str, Any]] | None:
+        return self.list_jobs(limit=limit, offset=0)
+
+    def list_jobs(self, *, limit: int = 20, offset: int = 0) -> list[dict[str, Any]] | None:
+        """Read-only paginated job history using the existing schema."""
+        limit = max(0, min(int(limit), 1000))
+        offset = max(0, int(offset))
         try:
             with closing(connect(self.db_path)) as conn:
                 ensure_schema(conn)
                 rows = conn.execute(
-                    "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+                    "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
                 ).fetchall()
             return [dict(row) for row in rows]
         except sqlite3.Error as exc:
-            _fail("查询 jobs 表（最近任务）", self.db_path, exc)
+            _fail("查询 jobs 表（分页历史）", self.db_path, exc)
+            return None
+
+    def count_jobs(self) -> int | None:
+        """Return the number of existing traceability jobs without schema changes."""
+        try:
+            with closing(connect(self.db_path)) as conn:
+                ensure_schema(conn)
+                row = conn.execute("SELECT COUNT(*) AS total FROM jobs").fetchone()
+            return int(row["total"]) if row is not None else 0
+        except sqlite3.Error as exc:
+            _fail("统计 jobs 表", self.db_path, exc)
             return None
 
 

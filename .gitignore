@@ -36,6 +36,7 @@ dist/dist/
 # Local environment and secrets
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 *.log

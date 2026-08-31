@@ -15,9 +15,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from damage_gui.config import Config
-from damage_gui.data.loader import DamageRecord
+
+if TYPE_CHECKING:
+    from damage_gui.data.loader import DamageRecord
 
 VALIDATION_MODES = (
     "random",

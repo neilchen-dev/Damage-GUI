@@ -1,9 +1,7 @@
 """GUI 展示层的纯函数：选项映射与指标状态文案。"""
 from __future__ import annotations
 
-import pandas as pd
-
-from damage_gui.config import CONFIG
+from damage_gui.gui.theme import THEME
 from damage_gui.model.validation import VALIDATION_LABELS
 
 MODEL_TYPE_CHOICES = (
@@ -33,18 +31,20 @@ def metric_display(
     label: str,
     target: float,
 ) -> tuple[str, str, str, str]:
+    import pandas as pd
+
     if value is None or pd.isna(value):
-        return "--", CONFIG.ui_text, f"{label} · 目标 < {target:.0%}", CONFIG.ui_muted
+        return "--", THEME.text, f"{label} · 目标 < {target:.0%}", THEME.muted
     if value < target:
         return (
             f"{value:.2%}",
-            CONFIG.ui_success,
+            THEME.success,
             f"{label} · 通过目标 < {target:.0%} ✔",
-            CONFIG.ui_success,
+            THEME.success,
         )
     return (
         f"{value:.2%}",
-        CONFIG.ui_danger,
+        THEME.danger,
         f"{label} · 未达目标 < {target:.0%} ✘",
-        CONFIG.ui_danger,
+        THEME.danger,
     )

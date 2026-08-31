@@ -24,7 +24,7 @@ pyinstaller ^
   --onedir ^
   --name "DamageEfficiencyApp" ^
   --paths "src" ^
-  "src\damage_gui\app.py"
+  "src\damage_gui\desktop.py"
 
 if errorlevel 1 (
     echo.

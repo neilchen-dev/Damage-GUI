@@ -1,0 +1,64 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DAMAGE_GUI_IMAGE:-damagelab-web:2.1.0}
+    environment:
+      DAMAGE_GUI_HOME: /var/lib/damagelab
+      DAMAGE_GUI_DB: /var/lib/damagelab/db/damage_gui.db
+      DAMAGE_GUI_MODEL_DIR: /var/lib/damagelab/models
+      DAMAGE_GUI_RESULT_DIR: /var/lib/damagelab/results
+      DAMAGE_GUI_HOST: 0.0.0.0
+      DAMAGE_GUI_PORT: 8000
+      DAMAGE_GUI_DEFAULT_MODEL: ${DAMAGE_GUI_DEFAULT_MODEL:-}
+      DAMAGE_GUI_RESULT_RETENTION_DAYS: ${DAMAGE_GUI_RESULT_RETENTION_DAYS:-7}
+    expose:
+      - "8000"
+    volumes:
+      - database:/var/lib/damagelab/db
+      - models:/var/lib/damagelab/models:ro
+      - results:/var/lib/damagelab/results
+    networks:
+      - damagelab_internal
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+
+  nginx:
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DAMAGE_GUI_DOMAIN: ${DAMAGE_GUI_DOMAIN:-damage.example.com}
+      NGINX_ENVSUBST_FILTER: ^DAMAGE_GUI_DOMAIN$
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./deploy/certbot/www:/var/www/certbot:ro
+      - ./deploy/letsencrypt:/etc/letsencrypt:ro
+    networks:
+      - damagelab_internal
+    restart: unless-stopped
+
+networks:
+  damagelab_internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  database:
+  models:
+  results:

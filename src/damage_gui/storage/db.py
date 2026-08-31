@@ -10,13 +10,34 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from damage_gui.gui.resources import app_base_dir
+from damage_gui.runtime.paths import app_base_dir
 
 logger = logging.getLogger("damage_gui.storage")
 
 DB_FILE_NAME = "damage_gui.db"
 
-SCHEMA_SQL = """
+
+def _jobs_table_sql(table_name: str = "jobs") -> str:
+    return f"""
+CREATE TABLE IF NOT EXISTS {table_name} (
+    id            TEXT PRIMARY KEY,
+    kind          TEXT NOT NULL CHECK (kind IN
+        ('training', 'batch_prediction', 'prediction', 'aim')),
+    status        TEXT NOT NULL CHECK (status IN
+        ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED')),
+    model_id      TEXT REFERENCES models(id),
+    input_source  TEXT,
+    created_at    TEXT NOT NULL,
+    started_at    TEXT,
+    finished_at   TEXT,
+    duration_ms   INTEGER,
+    error_summary TEXT,
+    details_json  TEXT
+)
+"""
+
+
+SCHEMA_SQL = f"""
 CREATE TABLE IF NOT EXISTS models (
     id                 TEXT PRIMARY KEY,
     created_at         TEXT NOT NULL,
@@ -31,20 +52,7 @@ CREATE TABLE IF NOT EXISTS models (
     artifact_path      TEXT
 );
 
-CREATE TABLE IF NOT EXISTS jobs (
-    id            TEXT PRIMARY KEY,
-    kind          TEXT NOT NULL CHECK (kind IN ('training', 'batch_prediction')),
-    status        TEXT NOT NULL CHECK (status IN
-        ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED')),
-    model_id      TEXT REFERENCES models(id),
-    input_source  TEXT,
-    created_at    TEXT NOT NULL,
-    started_at    TEXT,
-    finished_at   TEXT,
-    duration_ms   INTEGER,
-    error_summary TEXT,
-    details_json  TEXT
-);
+{_jobs_table_sql()};
 
 CREATE TABLE IF NOT EXISTS prediction_results (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,3 +121,47 @@ def init_database(db_path: str | Path) -> bool:
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """写入操作前确保表结构存在（CREATE IF NOT EXISTS，幂等）。"""
     conn.executescript(SCHEMA_SQL)
+    _migrate_jobs_kind_constraint(conn)
+
+
+def _migrate_jobs_kind_constraint(conn: sqlite3.Connection) -> None:
+    """Add prediction/AIM job kinds without dropping existing traceability.
+
+    SQLite cannot alter a CHECK constraint in place.  The rebuild is narrowly
+    scoped to the existing jobs table and copies every existing column/value.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+    ).fetchone()
+    sql = str(row[0]) if row is not None and row[0] is not None else ""
+    if "'prediction'" in sql and "'aim'" in sql:
+        return
+
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute("BEGIN")
+        conn.execute(_jobs_table_sql("jobs_phase6"))
+        conn.execute(
+            """
+            INSERT INTO jobs_phase6 (
+                id, kind, status, model_id, input_source, created_at,
+                started_at, finished_at, duration_ms, error_summary, details_json
+            )
+            SELECT id, kind, status, model_id, input_source, created_at,
+                   started_at, finished_at, duration_ms, error_summary, details_json
+            FROM jobs
+            """
+        )
+        conn.execute("DROP INDEX IF EXISTS idx_jobs_kind_status")
+        conn.execute("DROP INDEX IF EXISTS idx_jobs_created")
+        conn.execute("DROP TABLE jobs")
+        conn.execute("ALTER TABLE jobs_phase6 RENAME TO jobs")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_kind_status ON jobs(kind, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at)")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")

@@ -1,4 +1,9 @@
-"""Matplotlib 绘图：热力图、误差场与瞄准优化结果渲染。"""
+"""Matplotlib 绘图：热力图、误差场与瞄准优化结果渲染。
+
+后端无关：本模块只构建 Figure 对象，不在导入期绑定任何 matplotlib
+后端（TkAgg / Agg 均可）。桌面入口在创建 Tk 窗口前显式
+`matplotlib.use("TkAgg")`；Web/无头运行时使用 Agg。
+"""
 from __future__ import annotations
 
 import warnings
@@ -12,10 +17,22 @@ from matplotlib.figure import Figure
 from damage_gui.config import CONFIG, DAMAGE_CMAP, ERROR_CMAP, Config
 from damage_gui.data.preprocessing import coordinate_axes
 
-matplotlib.use("TkAgg")
+_FONTS_CONFIGURED = False
+PLOT_TITLE_SIZE = 10
+PLOT_AXIS_LABEL_SIZE = 9
+PLOT_TICK_SIZE = 8
 
 
 def configure_matplotlib_fonts() -> None:
+    """注册中文字体并设置 rcParams（幂等：重复调用无副作用）。
+
+    源码运行时优先注册 Windows 中文字体；不存在时回退到 matplotlib
+    内置候选。字体注册只影响文本渲染，不涉及任何数值绘图行为。
+    """
+    global _FONTS_CONFIGURED
+    if _FONTS_CONFIGURED:
+        return
+
     candidate_fonts = [
         (Path(r"C:\Windows\Fonts\msyh.ttc"), "Microsoft YaHei"),
         (Path(r"C:\Windows\Fonts\msyh.ttf"), "Microsoft YaHei"),
@@ -49,8 +66,13 @@ def configure_matplotlib_fonts() -> None:
         category=UserWarning,
     )
 
+    _FONTS_CONFIGURED = True
 
-configure_matplotlib_fonts()
+
+def _ensure_fonts_configured() -> None:
+    """渲染前确保字体已配置（替代旧的模块导入期副作用）。"""
+    if not _FONTS_CONFIGURED:
+        configure_matplotlib_fonts()
 
 
 def find_crop_bounds(
@@ -93,13 +115,13 @@ def crop_matrix_and_extent(
 def _style_heatmap_axis(axis, title: str, show_y_axis: bool = True) -> None:
     """极简坐标轴：只在最左图保留 y 轴，刻度稀疏、无网格、细边框。"""
     axis.set_facecolor(CONFIG.ui_bg)
-    axis.set_title(title, fontsize=10.5, color=CONFIG.ui_text, pad=8)
-    axis.set_xlabel("x (m)", fontsize=8.5, color=CONFIG.ui_muted)
+    axis.set_title(title, fontsize=PLOT_TITLE_SIZE, color=CONFIG.ui_text, pad=8)
+    axis.set_xlabel("x (m)", fontsize=PLOT_AXIS_LABEL_SIZE, color=CONFIG.ui_muted)
     axis.xaxis.set_major_locator(ticker.MaxNLocator(nbins=5, steps=[1, 2, 4, 5, 10]))
     axis.grid(False)
 
     if show_y_axis:
-        axis.set_ylabel("y (m)", fontsize=8.5, color=CONFIG.ui_muted)
+        axis.set_ylabel("y (m)", fontsize=PLOT_AXIS_LABEL_SIZE, color=CONFIG.ui_muted)
         axis.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5, steps=[1, 2, 4, 5, 10]))
     else:
         axis.get_yaxis().set_visible(False)
@@ -119,9 +141,9 @@ def _add_percent_colorbar(figure, image, axis, label: str, zero_center: bool = F
     落在刻度上，并在零点处画一条指示线，方便辨识"绝对无误差"区域。
     """
     colorbar = figure.colorbar(image, ax=axis, shrink=0.8, aspect=30, pad=0.06)
-    colorbar.ax.set_ylabel(label, rotation=90, fontsize=8.5, color=CONFIG.ui_muted)
+    colorbar.ax.set_ylabel(label, rotation=90, fontsize=PLOT_AXIS_LABEL_SIZE, color=CONFIG.ui_muted)
     colorbar.outline.set_visible(False)
-    colorbar.ax.tick_params(labelsize=7.5, colors=CONFIG.ui_muted, length=2, width=0.5)
+    colorbar.ax.tick_params(labelsize=PLOT_TICK_SIZE, colors=CONFIG.ui_muted, length=2, width=0.5)
     if zero_center:
         vmin, vmax = image.get_clim()
         ticks = np.linspace(vmin, vmax, 5)
@@ -143,6 +165,7 @@ def render_heatmaps(
     config: Config | None = None,
 ) -> Figure:
     """三联图：真实毁伤场 / 预测毁伤场（YlGnBu 单色调）/ 带符号误差场（RdBu_r 发散）。"""
+    _ensure_fonts_configured()
     config = config or CONFIG
     matrices_for_bounds = [pred_matrix]
     if true_matrix is not None:
@@ -203,6 +226,7 @@ def render_full_prediction(
     config: Config | None = None,
 ) -> Figure:
     """全视图预测图：显示整个 ROI 范围内的预测毁伤场。"""
+    _ensure_fonts_configured()
     from damage_gui.data.preprocessing import roi_mask_for_shape
 
     config = config or CONFIG
@@ -238,6 +262,7 @@ def render_aim_optimization(
 
     result: AimOptimizationResult（避免循环导入用鸭子类型）。
     """
+    _ensure_fonts_configured()
     config = config or CONFIG
     bounds = find_crop_bounds(
         [damage_matrix], threshold=config.display_threshold,

@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DamageLab — Damage-Field Prediction &amp; Analysis</title>
+<style>
+  :root{
+    --bg:#e8eaed;
+    --panel:#f7f8fa;
+    --surface:#ffffff;
+    --border:#d2d6db;
+    --border-lt:#e3e6ea;
+    --text:#23282e;
+    --text-2:#5a636d;
+    --text-3:#8b939c;
+    --accent:#1f5fa8;
+    --accent-hi:#1a4f8c;
+    --accent-soft:#e2ecf6;
+    --accent-bd:#b7cde4;
+    --ok:#1a7f37;
+    --warn:#9a6700;
+    --err:#cf222e;
+    --mono:"Cascadia Mono","Consolas","SF Mono",Menlo,monospace;
+    --sans:"Segoe UI","Helvetica Neue",Arial,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    font-family:var(--sans);
+    font-size:12px;
+    color:var(--text);
+    background:var(--bg);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  #app{display:flex;flex-direction:column;height:100vh;min-width:1180px;}
+
+  /* ── menu bar ─────────────────────────────── */
+  #menubar{
+    height:26px;background:#f2f3f5;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;padding:0 8px;gap:2px;flex:none;
+  }
+  .menu-item{padding:3px 9px;font-size:12px;color:var(--text);border-radius:2px;cursor:default;user-select:none;}
+  .menu-item:hover{background:#e4e7ea;}
+  #menubar .spacer{flex:1;}
+  #app-version{font-size:11px;color:var(--text-3);padding-right:6px;}
+
+  /* ── toolbar ──────────────────────────────── */
+  #toolbar{
+    height:36px;background:var(--panel);border-bottom:1px solid var(--border);
+    display:flex;align-items:center;padding:0 8px;gap:3px;flex:none;
+  }
+  #app-id{display:flex;align-items:center;gap:7px;padding:0 8px 0 2px;margin-right:6px;}
+  #app-id .name{font-size:12.5px;font-weight:600;letter-spacing:.01em;}
+  #app-id .proj{font-size:11px;color:var(--text-2);font-family:var(--mono);}
+  .tsep{width:1px;height:18px;background:var(--border);margin:0 6px;flex:none;}
+  .tbtn{
+    display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;
+    font-size:12px;color:var(--text);background:transparent;border:1px solid transparent;
+    border-radius:3px;cursor:default;user-select:none;
+  }
+  .tbtn:hover{background:#e9ecef;border-color:var(--border-lt);}
+  .tbtn.active{background:var(--accent-soft);border-color:var(--accent-bd);color:var(--accent);}
+  .tbtn svg{width:14px;height:14px;flex:none;}
+  .tbtn .key{font-size:10px;color:var(--text-3);font-family:var(--mono);}
+  #toolbar .spacer{flex:1;}
+  #units-tag{font-size:11px;color:var(--text-2);padding:0 8px;letter-spacing:.04em;}
+
+  /* ── main region ──────────────────────────── */
+  #main{flex:1;display:flex;min-height:0;}
+
+  /* nav */
+  #nav{
+    width:200px;flex:none;background:var(--panel);
+    border-right:1px solid var(--border);overflow-y:auto;
+  }
+  .nav-group{
+    font-size:10.5px;font-weight:600;letter-spacing:.09em;color:var(--text-3);
+    padding:12px 12px 4px;text-transform:uppercase;
+  }
+  .nav-item{
+    display:flex;align-items:center;gap:8px;height:27px;padding:0 10px;
+    font-size:12.5px;color:var(--text);cursor:pointer;user-select:none;
+    border-left:2px solid transparent;
+  }
+  .nav-item:hover{background:#eceff2;}
+  .nav-item.active{background:var(--accent-soft);border-left-color:var(--accent);color:var(--accent);font-weight:600;}
+  .nav-item svg{width:14px;height:14px;flex:none;opacity:.75;}
+  .nav-item.active svg{opacity:1;}
+  .nav-badge{margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--text-3);}
+
+  /* properties panel */
+  #props{
+    width:260px;flex:none;background:var(--surface);
+    border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;
+  }
+  .panel{display:none;flex-direction:column;flex:1;min-height:0;}
+  .panel.show{display:flex;}
+  .panel-head{padding:11px 12px 9px;border-bottom:1px solid var(--border-lt);flex:none;}
+  .panel-title{font-size:15px;font-weight:600;}
+  .panel-sub{font-size:11px;color:var(--text-2);margin-top:2px;line-height:1.4;}
+  .panel-body{flex:1;overflow-y:auto;padding-bottom:12px;}
+  .sec{
+    font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+    color:var(--text-2);padding:12px 12px 5px;
+  }
+  .prow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 12px;min-height:26px;}
+  .prow>label{font-size:12px;color:var(--text);flex:none;}
+  .prow .unit{font-size:11px;color:var(--text-3);margin-left:4px;}
+  .prow input[type=number],.prow input[type=text],.prow select{
+    width:118px;height:23px;padding:0 6px;font-size:12px;font-family:var(--mono);
+    color:var(--text);background:var(--surface);border:1px solid #c6cbd1;border-radius:2px;
+    font-variant-numeric:tabular-nums;
+  }
+  .prow input[type=text]{font-family:var(--sans);width:150px;}
+  .prow select{font-family:var(--sans);}
+  .prow input:focus,.prow select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(31,95,168,.14);}
+  .btnrow{display:flex;gap:6px;padding:8px 12px;}
+  .btn{
+    height:26px;padding:0 12px;font-size:12px;font-family:var(--sans);color:var(--text);
+    background:var(--surface);border:1px solid #c6cbd1;border-radius:3px;cursor:pointer;
+    user-select:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .btn:hover:not(:disabled){background:#f0f2f4;}
+  .btn:active:not(:disabled){background:#e6e9ec;}
+  .btn:disabled{opacity:.5;cursor:default;}
+  .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .btn-primary:hover:not(:disabled){background:var(--accent-hi);}
+  .btn-wide{flex:1;}
+  .hint{padding:2px 12px;font-size:11px;color:var(--text-3);}
+  .hint .mono{color:var(--text-2);}
+  .statusline{display:flex;align-items:center;gap:6px;padding:4px 12px;font-size:11px;color:var(--text-2);}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none;}
+  .dot.ok{background:var(--ok);}
+  .dot.warn{background:var(--warn);}
+  .note{
+    margin:6px 12px;padding:7px 9px;font-size:11px;color:var(--text-2);
+    background:#f5f7f9;border:1px solid var(--border-lt);border-radius:3px;line-height:1.5;
+  }
+  .prog{margin:6px 12px 2px;height:4px;background:#e8ebee;border-radius:2px;overflow:hidden;display:none;}
+  .prog .fill{height:100%;width:0;background:var(--accent);}
+  .kvlist{padding:2px 0;}
+  .mini-table{width:calc(100% - 24px);margin:4px 12px;border-collapse:collapse;font-family:var(--mono);font-size:10.5px;}
+  .mini-table th{
+    font-family:var(--sans);font-weight:600;font-size:10.5px;color:var(--text-2);
+    text-align:right;padding:3px 6px;border-bottom:1px solid var(--border);white-space:nowrap;
+  }
+  .mini-table td{text-align:right;padding:2.5px 6px;color:var(--text);border-bottom:1px solid var(--border-lt);font-variant-numeric:tabular-nums;}
+  .mini-table th:first-child,.mini-table td:first-child{text-align:left;}
+  .hist-item{
+    padding:5px 12px;font-size:11px;cursor:pointer;border-left:2px solid transparent;
+    display:flex;justify-content:space-between;gap:8px;align-items:baseline;
+  }
+  .hist-item:hover{background:#eef1f4;}
+  .hist-item .t{font-family:var(--mono);color:var(--text-2);flex:none;}
+  .hist-item .p{font-family:var(--mono);color:var(--text);}
+  .hist-item .d{font-family:var(--mono);color:var(--accent);flex:none;}
+  .chk{display:flex;align-items:center;gap:7px;padding:3px 12px;font-size:12px;cursor:pointer;user-select:none;}
+  .chk input{accent-color:var(--accent);width:13px;height:13px;margin:0;}
+  .opt-out{margin:8px 12px;border:1px solid var(--border-lt);border-radius:3px;padding:8px 10px;display:none;}
+  .opt-out .ot{font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--text-2);text-transform:uppercase;margin-bottom:5px;}
+  .opt-out .ov{display:flex;justify-content:space-between;font-size:11.5px;padding:1.5px 0;}
+  .opt-out .ov b{font-family:var(--mono);font-weight:400;font-variant-numeric:tabular-nums;}
+
+  /* viewport */
+  #viewport{flex:1;display:flex;flex-direction:column;min-width:0;background:#fbfcfd;}
+  #vp-bar{
+    height:30px;flex:none;display:flex;align-items:center;gap:4px;
+    padding:0 8px;border-bottom:1px solid var(--border-lt);background:var(--panel);
+  }
+  #vp-bar label{font-size:11px;color:var(--text-2);display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;padding:0 6px;}
+  #vp-bar input{accent-color:var(--accent);width:12px;height:12px;margin:0;}
+  #vp-bar select{
+    height:21px;font-size:11px;padding:0 4px;border:1px solid #c6cbd1;border-radius:2px;
+    background:var(--surface);color:var(--text);
+  }
+  #vp-bar .vsep{width:1px;height:15px;background:var(--border-lt);margin:0 5px;}
+  #vp-bar .spacer{flex:1;}
+  #vp-bar .vbtn{font-size:11px;color:var(--text);padding:2px 8px;border:1px solid transparent;border-radius:2px;cursor:pointer;user-select:none;}
+  #vp-bar .vbtn:hover{background:#e9ecef;border-color:var(--border-lt);}
+  #vp-wrap{flex:1;position:relative;min-height:0;}
+  #cv{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;}
+  #vp-title{position:absolute;top:10px;left:14px;pointer-events:none;}
+  #vp-title-main{font-size:13px;font-weight:600;color:var(--text);}
+  #vp-title-sub{font-size:11px;color:var(--text-2);margin-top:3px;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  #vp-sb{
+    position:absolute;right:14px;bottom:10px;font-size:10.5px;color:var(--text-3);
+    font-family:var(--mono);pointer-events:none;
+  }
+
+  /* results panel */
+  #results{
+    width:240px;flex:none;background:var(--surface);
+    border-left:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;
+  }
+  #results .panel-head{padding:11px 12px 9px;}
+  .kv{display:flex;justify-content:space-between;align-items:baseline;padding:3px 12px;gap:8px;}
+  .kv .k{font-size:12px;color:var(--text-2);}
+  .kv .v{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;color:var(--text);}
+  .rsec{border-top:1px solid var(--border-lt);margin-top:8px;padding-top:4px;}
+  #r-conf{font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--ok);display:flex;align-items:center;gap:6px;}
+  #r-conf.med{color:var(--warn);}
+
+  /* status bar */
+  #statusbar{
+    height:24px;flex:none;background:var(--panel);border-top:1px solid var(--border);
+    display:flex;align-items:center;padding:0 10px;gap:0;font-size:11px;color:var(--text-2);
+  }
+  #sb-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px;flex:none;}
+  #sb-status{color:var(--text);white-space:nowrap;}
+  .sbseg{padding:0 10px;border-left:1px solid var(--border-lt);white-space:nowrap;}
+  .sbseg.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  #sb-probe{min-width:230px;}
+  #statusbar .spacer{flex:1;}
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:#c9cdd2;border:2px solid var(--panel);border-radius:5px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- menu bar -->
+  <div id="menubar">
+    <span class="menu-item">File</span><span class="menu-item">Edit</span><span class="menu-item">View</span>
+    <span class="menu-item">Model</span><span class="menu-item">Analysis</span><span class="menu-item">Results</span>
+    <span class="menu-item">Help</span>
+    <span class="spacer"></span>
+    <span id="app-version">DamageLab 2.4.1</span>
+  </div>
+
+  <!-- toolbar -->
+  <div id="toolbar">
+    <div id="app-id">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#1f5fa8" stroke-width="1.4">
+        <rect x="1.5" y="1.5" width="13" height="13"/><path d="M4 11 L7 5 L9.5 9 L11 6.5 L12.5 11 Z" fill="#1f5fa8" stroke="none"/>
+      </svg>
+      <span class="name">DamageLab</span>
+      <span class="proj">untitled_project.dmproj</span>
+    </div>
+    <div class="tsep"></div>
+    <span class="tbtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3h7l3 3v7H3z"/><path d="M10 3v3h3"/></svg>New</span>
+    <span class="tbtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3.5h4l1.5 2H14v7H2z"/></svg>Open</span>
+    <span class="tbtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2h8l2 2v10H3z"/><path d="M5 7h6M5 10h4"/></svg>Save</span>
+    <div class="tsep"></div>
+    <span class="tbtn" id="tb-run"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 3.5 L12 8 L4.5 12.5 Z"/></svg>Run<span class="key">F5</span></span>
+    <span class="tbtn" style="opacity:.45"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="8" height="8"/></svg>Stop</span>
+    <div class="tsep"></div>
+    <span class="tbtn active" id="tb-contours"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="2"/><ellipse cx="8" cy="8" rx="4.5" ry="3"/><ellipse cx="8" cy="8" rx="3" ry="4.5"/></svg>Contours</span>
+    <span class="tbtn active" id="tb-grid"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 5.5h12M2 10.5h12M5.5 2v12M10.5 2v12"/></svg>Grid</span>
+    <span class="tbtn active" id="tb-probe"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="3.5"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/></svg>Probe</span>
+    <div class="spacer"></div>
+    <span id="units-tag">SI units</span>
+  </div>
+
+  <!-- main -->
+  <div id="main">
+
+    <!-- left nav -->
+    <nav id="nav">
+      <div class="nav-group">Project</div>
+      <div class="nav-item" data-panel="dataset">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="11"/><path d="M2 5.5h12M5 2.5v3"/></svg>
+        Dataset<span class="nav-badge">1,240</span>
+      </div>
+      <div class="nav-item" data-panel="model">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="8" cy="12" r="2"/><path d="M5.5 5.2 7 10.4M10.5 5.2 9 10.4M6 4h4"/></svg>
+        Model
+      </div>
+      <div class="nav-item" data-panel="validation">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2.5 8.5 L6 12 L13.5 4.5"/></svg>
+        Validation
+      </div>
+      <div class="nav-group">Analysis</div>
+      <div class="nav-item active" data-panel="prediction">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><path d="M8 1.2v2.4M8 12.4v2.4M1.2 8h2.4M12.4 8h2.4"/></svg>
+        Prediction
+      </div>
+      <div class="nav-item" data-panel="batch">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 4.5h9v8H2z"/><path d="M5 4.5v-2h9v8h-2"/></svg>
+        Batch Prediction
+      </div>
+      <div class="nav-item" data-panel="aim">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.5"/><path d="M8 1v16M1 8h16" transform="scale(.85) translate(1.4 1.4)"/></svg>
+        Aim Optimization
+      </div>
+      <div class="nav-group">Results</div>
+      <div class="nav-item" data-panel="history">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.8"/></svg>
+        History<span class="nav-badge" id="hist-count">7</span>
+      </div>
+      <div class="nav-item" data-panel="export">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M8 2v7M5 6.5 8 9.5l3-3M3 12.5h10"/></svg>
+        Export
+      </div>
+    </nav>
+
+    <!-- contextual properties panel -->
+    <aside id="props">
+
+      <!-- DATASET -->
+      <div class="panel" id="panel-dataset">
+        <div class="panel-head">
+          <div class="panel-title">Dataset</div>
+          <div class="panel-sub">Impact test measurements used for training and validation.</div>
+        </div>
+        <div class="panel-body">
+          <div class="sec">Source</div>
+          <div class="prow"><label>File</label>
+            <select style="width:130px"><option>impact_tests_2026A.csv</option><option>impact_tests_2025B.csv</option><option>combined_v3.csv</option></select>
+          </div>
+          <div class="sec">Summary</div>
+          <div class="kvlist">
+            <div class="kv"><span class="k">Samples</span><span class="v">1,240</span></div>
+            <div class="kv"><span class="k">Features</span><span class="v">11</span></div>
+            <div class="kv"><span class="k">Targets</span><span class="v">1</span></div>
+            <div class="kv"><span class="k">Missing values</span><span class="v">0</span></div>
+          </div>
+          <div class="sec">Split</div>
+          <div class="prow"><label>Train</label><input type="number" value="80" step="5"></div>
+          <div class="prow"><label>Validation<span class="unit">%</span></label><input type="number" value="20" step="5"></div>
+          <div class="sec">Preview</div>
+          <table class="mini-table">
+            <tr><th>case</th><th>h&nbsp;m</th><th>v&nbsp;m/s</th><th>θ&nbsp;°</th><th>Dmax</th></tr>
+            <tr><td>C-0141</td><td>0.0</td><td>152</td><td>19</td><td>0.79</td></tr>
+            <tr><td>C-0142</td><td>1.5</td><td>168</td><td>22</td><td>0.83</td></tr>
+            <tr><td>C-0143</td><td>3.0</td><td>141</td><td>31</td><td>0.71</td></tr>
+            <tr><td>C-0144</td><td>0.5</td><td>187</td><td>15</td><td>0.88</td></tr>
+            <tr><td>C-0145</td><td>2.0</td><td>126</td><td>40</td><td>0.64</td></tr>
+          </table>
+          <div class="hint" style="padding-top:6px">Showing 5 of 1,240 rows.</div>
+        </div>
+      </div>
+
+      <!-- MODEL -->
+      <div class="panel" id="panel-model">
+        <div class="panel-head">
+          <div class="panel-title">Model</div>
+          <div class="panel-sub">Surrogate model configuration and lifecycle.</div>
+        </div>
+        <div class="panel-body">
+          <div class="sec">Configuration</div>
+          <div class="prow"><label>Model type</label>
+            <select id="in-mtype">
+              <option>POD–RBF Surrogate</option><option>Gaussian Process</option><option>DeepONet</option><option>POD–Kriging</option>
+            </select>
+          </div>
+          <div class="prow"><label>Damage level</label>
+            <select id="in-dlevel"><option>Scalar field (continuous)</option><option>Level I–IV (classified)</option></select>
+          </div>
+          <div class="prow"><label>Validation method</label>
+            <select id="in-vmethod"><option>5-Fold CV</option><option>Hold-out</option><option>LOOCV</option></select>
+          </div>
+          <div class="prow"><label>POD components</label><input type="number" id="in-pod" value="24" min="2" max="64" step="1"></div>
+          <div class="sec">Status</div>
+          <div class="statusline"><span class="dot ok" id="model-dot"></span><span id="model-status">Trained · 2026-08-27 17:42</span></div>
+          <div class="prog" id="train-prog"><div class="fill" id="train-fill"></div></div>
+          <div class="hint" id="train-hint">POD basis captures <span class="mono">99.2 %</span> of energy with 24 modes.</div>
+          <div class="sec">Actions</div>
+          <div class="btnrow">
+            <button class="btn btn-primary btn-wide" id="btn-train">Train</button>
+            <button class="btn" id="btn-load">Load</button>
+            <button class="btn" id="btn-save">Save</button>
+          </div>
+          <div class="hint">Checkpoint: <span class="mono">pod_rbf_v7.dmck</span></div>
+        </div>
+      </div>
+
+      <!-- VALIDATION -->
+      <div class="panel" id="panel-validation">
+        <div class="panel-head">
+          <div class="panel-title">Validation</div>
+          <div class="panel-sub">Cross-validation of the trained surrogate model.</div>
+        </div>
+        <div class="panel-body">
+          <div class="sec">Method</div>
+          <div class="prow"><label>Scheme</label>
+            <select id="val-scheme"><option>5-Fold CV</option><option>Hold-out</option><option>LOOCV</option></select>
+          </div>
+          <div class="prow"><label>Fold size</label><input type="number" value="248" disabled style="background:#f3f4f6;color:var(--text-2)"></div>
+          <div class="sec">Metrics</div>
+          <div class="note">Metrics are reported in the Results panel and updated after each recomputation.</div>
+          <div class="btnrow"><button class="btn btn-primary btn-wide" id="btn-recompute">Recompute</button></div>
+          <div class="hint">Last computed <span class="mono" id="val-time">13:02:07</span> · <span class="mono">1.1 s</span></div>
+        </div>
+      </div>
+
+      <!-- PREDICTION -->
+      <div class="panel" id="panel-prediction">
+        <div class="panel-head">
+          <div class="panel-title">Prediction</div>
+          <div class="panel-sub">Single-case damage-field prediction.</div>
+        </div>
+        <div class="panel-body">
+          <div class="sec">Parameters</div>
+          <div class="prow"><label>Height h<span class="unit">m</span></label><input type="number" id="in-h" value="0" step="0.5"></div>
+          <div class="prow"><label>Velocity v<span class="unit">m/s</span></label><input type="number" id="in-v" value="150" step="5" min="10"></div>
+          <div class="prow"><label>Angle θ<span class="unit">°</span></label><input type="number" id="in-th" value="20" step="1" min="0" max="90"></div>
+          <div class="sec">Run</div>
+          <div class="btnrow"><button class="btn btn-primary btn-wide" id="btn-run">Run Prediction</button></div>
+          <div class="hint">Shortcut <span class="mono">F5</span> · results appear in the Results panel.</div>
+        </div>
+      </div>
+
+      <!-- BATCH -->
+      <div class="panel" id="panel-batch">
+        <div class="panel-head">
+          <div class="panel-title">Batch Prediction</div>
+          <div class="panel-sub">Sweep a parameter range over a case set.</div>
+        </div>
+        <div class="panel-body">
+          <div class="sec">Input</div>
+          <div class="prow"><label>Case set</label>
+            <select style="width:130px"><option>dataset_44cases.csv</option><option>grid_sweep_120.csv</option></select>
+          </div>
+          <div class="sec">Velocity range <span style="font-weight:400;text-transform:none;letter-spacing:0">(m/s)</span></div>
+          <div class="prow"><label>From</label><input type="number" id="in-vmin" value="100" step="10"></div>
+          <div class="prow"><label>To</label><input type="number" id="in-vmax" value="300" step="10"></div>
+          <div class="sec">Angle range <span style="font-weight:400;text-transform:none;letter-spacing:0">(°)</span></div>
+          <div class="prow"><label>From</label><input type="number" id="in-thmin" value="10" step="5"></div>
+          <div class="prow"><label>To</label><input type="number" id="in-thmax" value="60" step="5"></div>
+          <div class="sec">Run</div>
+          <div class="btnrow"><button class="btn btn-primary btn-wide" id="btn-batch">Run Batch</button></div>
+          <div class="prog" id="batch-prog"><div class="fill" id="batch-fill"></div></div>
+          <div class="hint" id="batch-status">44 cases queued.</div>
+        </div>
+      </div>
+
+      <!-- AIM OPTIMIZATION -->
+      <div class="panel" id="panel-aim">
+        <div class="panel-head">
+          <div class="panel-title">Aim Optimization</div>
+          <div class="panel-sub">Optimize impact parameters against a dispersion model.</div>
+        </div>
+        <div class="panel-body">
+          <div class="sec">Dispersion</div>
+          <div class="prow"><label>Spread model</label>
+            <select id="in-spread"><option>Bivariate Normal</option><option>Rayleigh</option><option>Empirical KDE</option></select>
+          </div>
+          <div class="prow"><label>CEP<span class="unit">m</span></label><input type="number" id="in-cep" value="5.0" step="0.5" min="0"></div>
+          <div class="prow"><label>ρ<span class="unit">—</span></label><input type="number" id="in-rho" value="0.62" step="0.02" min="0" max="1"></div>
+          <div class="prow"><label>θ<span class="unit">°</span></label><input type="number" id="in-atheta" value="20" step="1" min="0" max="90"></div>
+          <div class="sec">Objective</div>
+          <div class="prow"><label>Maximize</label>
+            <select style="width:150px"><option>E[D<sub>max</sub>] − λ·CEP</option><option>E[D<sub>mean</sub>]</option><option>P(D &gt; 0.5)</option></select>
+          </div>
+          <div class="btnrow"><button class="btn btn-primary btn-wide" id="btn-opt">Optimize</button></div>
+          <div class="opt-out" id="opt-out">
+            <div class="ot">Optimum</div>
+            <div class="ov"><span>v*</span><b id="ov-v">287 m/s</b></div>
+            <div class="ov"><span>θ*</span><b id="ov-th">34°</b></div>
+            <div class="ov"><span>E[D<sub>max</sub>]</span><b id="ov-d">0.871</b></div>
+            <div class="ov"><span>CEP</span><b id="ov-cep">4.21 m</b></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- HISTORY -->
+      <div class="panel" id="panel-history">
+        <div class="panel-head">
+          <div class="panel-title">History</div>
+          <div class="panel-sub">Previous runs in this session. Click to reload.</div>
+        </div>
+        <div class="panel-body">
+          <div class="sec">Session runs</div>
+          <div id="hist-list"></div>
+          <div class="btnrow"><button class="btn btn-wide" id="btn-clear-hist">Clear History</button></div>
+        </div>
+      </div>
+
+      <!-- EXPORT -->
+      <div class="panel" id="panel-export">
+        <div class="panel-head">
+          <div class="panel-title">Export</div>
+          <div class="panel-sub">Export the current prediction result.</div>
+        </div>
+        <div class="panel-body">
+          <div class="sec">Formats</div>
+          <label class="chk"><input type="checkbox" id="ex-csv" checked>CSV — summary statistics</label>
+          <label class="chk"><input type="checkbox" id="ex-png" checked>PNG — figure with colorbar</label>
+          <label class="chk"><input type="checkbox" id="ex-npz">NPZ — field array (float32)</label>
+          <div class="sec">Destination</div>
+          <div class="prow"><input type="text" id="ex-path" value="./results/run_0007/" style="width:100%"></div>
+          <div class="sec">Figure options</div>
+          <label class="chk"><input type="checkbox" checked>Include colorbar</label>
+          <label class="chk"><input type="checkbox" checked>Include axes and grid</label>
+          <div class="btnrow"><button class="btn btn-primary btn-wide" id="btn-export">Export Current Result</button></div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- central viewport -->
+    <section id="viewport">
+      <div id="vp-bar">
+        <select id="sel-view"><option>Top view (XY)</option><option>Front view (XZ)</option><option>Slice: y = 0 m</option></select>
+        <div class="vsep"></div>
+        <label><input type="checkbox" id="chk-contours" checked>Contours</label>
+        <label><input type="checkbox" id="chk-grid" checked>Grid</label>
+        <label><input type="checkbox" id="chk-probe" checked>Probe</label>
+        <div class="vsep"></div>
+        <span style="font-size:11px;color:var(--text-2)">Colormap</span>
+        <select id="sel-cmap"><option>Viridis</option><option>Inferno</option><option>Cividis</option></select>
+        <div class="spacer"></div>
+        <span class="vbtn">Fit</span>
+        <span class="vbtn">1:1</span>
+      </div>
+      <div id="vp-wrap">
+        <canvas id="cv"></canvas>
+        <div id="vp-title">
+          <div id="vp-title-main">Damage Field — Single Prediction</div>
+          <div id="vp-title-sub">h = 0 m · v = 150 m/s · θ = 20°</div>
+        </div>
+        <div id="vp-sb">D = damage index · threshold 0.15</div>
+      </div>
+    </section>
+
+    <!-- right results panel -->
+    <aside id="results">
+      <div class="panel-head">
+        <div class="panel-title">Results</div>
+        <div class="panel-sub">Run <span class="mono" id="r-run">run_0007</span> · surrogate prediction</div>
+      </div>
+      <div class="sec">Result</div>
+      <div class="kvlist">
+        <div class="kv"><span class="k">Maximum Damage</span><span class="v" id="r-max">0.8241</span></div>
+        <div class="kv"><span class="k">Mean Damage</span><span class="v" id="r-mean">0.2183</span></div>
+        <div class="kv"><span class="k">Damaged Area</span><span class="v" id="r-area">42.31 m²</span></div>
+        <div class="kv"><span class="k">Grid</span><span class="v">160 × 120</span></div>
+      </div>
+      <div class="rsec">
+        <div class="sec">Validation</div>
+        <div class="kvlist">
+          <div class="kv"><span class="k">R²</span><span class="v" id="r-r2">0.9533</span></div>
+          <div class="kv"><span class="k">Mean Error</span><span class="v" id="r-merr">8.40 %</span></div>
+          <div class="kv"><span class="k">P95 Error</span><span class="v" id="r-p95">17.60 %</span></div>
+        </div>
+      </div>
+      <div class="rsec">
+        <div class="sec">Confidence</div>
+        <div class="kv"><span id="r-conf"><span class="dot ok"></span>High</span></div>
+      </div>
+      <div class="rsec">
+        <div class="sec">Run info</div>
+        <div class="kvlist">
+          <div class="kv"><span class="k">Timestamp</span><span class="v" id="r-time">2026-08-28 13:01</span></div>
+          <div class="kv"><span class="k">Elapsed</span><span class="v" id="r-elapsed">0.42 s</span></div>
+          <div class="kv"><span class="k">Model</span><span class="v">pod_rbf_v7</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- status bar -->
+  <div id="statusbar">
+    <span id="sb-dot"></span>
+    <span id="sb-status">Ready</span>
+    <span class="sbseg mono">Grid 160 × 120 · Domain 40 × 30 m</span>
+    <span class="sbseg mono" id="sb-probe">x = — · y = — · D = —</span>
+    <span class="spacer"></span>
+    <span class="sbseg mono">MEM 412 MB</span>
+    <span class="sbseg mono" id="sb-time">13:01:44</span>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ───────────────────────── state ───────────────────────── */
+var state = {
+  h:0, v:150, th:20,
+  mode:"field",            // field | scatter | residual
+  cmap:"Viridis",
+  field:null,
+  stats:{max:0,mean:0,area:0},
+  runNo:7,
+  history:[]
+};
+
+var NX=160, NY=120, X0=-10, X1=30, Y0=-10, Y1=20;
+var NODE_AREA=((X1-X0)/(NX-1))*((Y1-Y0)/(NY-1));
+var THRESH=0.15;
+
+/* seeded RNG */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+/* ───────────────────────── colormaps ───────────────────── */
+var CMAPS={
+  Viridis:[[0,68,1,84],[.14,71,24,106],[.29,54,92,141],[.43,39,127,142],[.57,31,161,136],[.71,74,194,109],[.85,159,218,58],[1,253,231,37]],
+  Inferno:[[0,0,0,4],[.25,87,16,110],[.5,188,55,84],[.75,249,142,9],[1,252,255,164]],
+  Cividis:[[0,0,32,76],[.25,64,105,152],[.5,139,171,183],[.75,222,207,138],[1,253,244,214]]
+};
+function cmap(name,t){
+  var st=CMAPS[name]; t=Math.max(0,Math.min(1,t));
+  for(var i=1;i<st.length;i++){
+    if(t<=st[i][0]){
+      var a=st[i-1],b=st[i],f=(t-a[0])/(b[0]-a[0]||1);
+      return [Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f),Math.round(a[3]+(b[3]-a[3])*f)];
+    }
+  }
+  return [st[st.length-1][1],st[st.length-1][2],st[st.length-1][3]];
+}
+
+/* ───────────────────────── physics-ish field ───────────── */
+function computeField(h,v,th){
+  var seed=Math.round((h+100)*7919+v*104729+th*1299709)&0x7fffffff;
+  var rnd=mulberry32(seed||1);
+  var n=3+Math.floor(rnd()*3), imps=[];
+  for(var k=0;k<n;k++){
+    imps.push({x:X0+4+rnd()*((X1-6)-(X0+4)), y:Y0+3+rnd()*((Y1-5)-(Y0+3)),
+               amp:0.55+rnd()*0.5, s:2.1+rnd()*2.6, el:0.6+rnd()*0.8});
+  }
+  var energy=Math.pow(v/300,2)*(1+th/60)*2.6;
+  var spread=1+h/40+th/120;
+  var t=th*Math.PI/180, ct=Math.cos(t), st=Math.sin(t);
+  var f=new Float32Array(NX*NY);
+  for(var j=0;j<NY;j++){
+    var y=Y0+j*(Y1-Y0)/(NY-1);
+    for(var i=0;i<NX;i++){
+      var x=X0+i*(X1-X0)/(NX-1), d=0;
+      for(var q=0;q<n;q++){
+        var im=imps[q];
+        var dx=(x-im.x)/(im.s*spread), dy=(y-im.y)/(im.s*spread*im.el);
+        var rx=dx*ct+dy*st, ry=-dx*st+dy*ct;
+        d+=im.amp*energy*Math.exp(-(rx*rx+ry*ry));
+      }
+      f[j*NX+i]=Math.min(1,d);
+    }
+  }
+  return f;
+}
+function computeStats(f){
+  var mx=0,sum=0,cnt=0;
+  for(var i=0;i<f.length;i++){ if(f[i]>mx)mx=f[i]; sum+=f[i]; if(f[i]>THRESH)cnt++; }
+  return {max:mx, mean:sum/f.length, area:cnt*NODE_AREA};
+}
+
+/* ───────────────────────── canvas setup ────────────────── */
+var wrap=document.getElementById("vp-wrap");
+var cv=document.getElementById("cv");
+var ctx=cv.getContext("2d");
+var base=document.createElement("canvas");
+var bctx=base.getContext("2d");
+var plotRect=null, dpr=1;
+
+function resize(){
+  dpr=window.devicePixelRatio||1;
+  var w=wrap.clientWidth, h=wrap.clientHeight;
+  if(w<10||h<10)return;
+  cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+  base.width=cv.width; base.height=cv.height;
+  renderBase(); blit();
+}
+new ResizeObserver(resize).observe(wrap);
+
+function fmt(v,dp){ return v.toFixed(dp); }
+
+/* draw axes helper for scatter-type plots */
+function drawFrame(c,rect,xTicks,yTicks,xLabel,yLabel){
+  var x=rect[0],y=rect[1],w=rect[2],h=rect[3];
+  c.save(); c.scale(dpr,dpr);
+  /* grid */
+  c.strokeStyle="rgba(0,0,0,0.05)"; c.lineWidth=1;
+  for(var i=0;i<xTicks.length;i++){
+    var gx=Math.round(x+w*xTicks[i][1])+0.5;
+    c.beginPath();c.moveTo(gx,y);c.lineTo(gx,y+h);c.stroke();
+  }
+  for(var j=0;j<yTicks.length;j++){
+    var gy=Math.round(y+h*(1-yTicks[j][1]))+0.5;
+    c.beginPath();c.moveTo(x,gy);c.lineTo(x+w,gy);c.stroke();
+  }
+  /* border */
+  c.strokeStyle="rgba(0,0,0,0.18)"; c.strokeRect(x+0.5,y+0.5,w-1,h-1);
+  /* ticks + labels */
+  c.fillStyle="#5a636d"; c.font='10px "Cascadia Mono",Consolas,monospace';
+  c.textAlign="center"; c.textBaseline="top";
+  for(i=0;i<xTicks.length;i++)
+    c.fillText(xTicks[i][0], x+w*xTicks[i][1], y+h+6);
+  c.textAlign="right"; c.textBaseline="middle";
+  for(j=0;j<yTicks.length;j++)
+    c.fillText(yTicks[j][0], x-6, y+h*(1-yTicks[j][1]));
+  c.textAlign="left";
+  c.fillText(xLabel, x+w, y-4);
+  c.save(); c.translate(x-30,y); c.rotate(-Math.PI/2); c.textAlign="right";
+  c.fillText(yLabel, 0, 0); c.restore();
+  c.restore();
+}
+
+/* marching squares contours */
+function drawContours(c,f,level,rect){
+  var ox=rect[0],oy=rect[1],w=rect[2],h=rect[3];
+  var sx=w/(NX-1), sy=h/(NY-1);
+  function X(i){return ox+i*sx;} function Y(j){return oy+j*sy;}
+  for(var j=0;j<NY-1;j++){
+    for(var i=0;i<NX-1;i++){
+      var a=f[j*NX+i],b=f[j*NX+i+1],cc=f[(j+1)*NX+i+1],d=f[(j+1)*NX+i];
+      var m=(a>level?8:0)|(b>level?4:0)|(cc>level?2:0)|(d>level?1:0);
+      if(m===0||m===15)continue;
+      var T=[X(i)+(level-a)/(b-a)*sx, Y(j)];
+      var R=[X(i+1), Y(j)+(level-b)/(cc-b)*sy];
+      var B=[X(i)+(level-d)/(cc-d)*sx, Y(j+1)];
+      var L=[X(i), Y(j)+(level-a)/(d-a)*sy];
+      var e;
+      switch(m){
+        case 1: case 14: e=[L,B]; break;
+        case 2: case 13: e=[B,R]; break;
+        case 3: case 12: e=[L,R]; break;
+        case 4: case 11: e=[T,R]; break;
+        case 6: case 9:  e=[T,B]; break;
+        case 7: case 8:  e=[T,L]; break;
+        case 5:  e=[T,L,B,R]; break;
+        case 10: e=[T,R,B,L]; break;
+      }
+      for(var k=0;k<e.length;k+=2){
+        c.moveTo(e[k][0],e[k][1]); c.lineTo(e[k+1][0],e[k+1][1]);
+      }
+    }
+  }
+}
+
+/* scatter data (deterministic) */
+function scatterData(){
+  var rnd=mulberry32(20260828), pts=[];
+  for(var i=0;i<64;i++){
+    var v=80+rnd()*240, th=8+rnd()*52;
+    var d=Math.min(0.98, Math.pow(v/300,1.6)*(0.55+th/90)+ (rnd()-0.5)*0.12);
+    pts.push([v,Math.max(0.02,d)]);
+  }
+  return pts;
+}
+function residualData(){
+  var rnd=mulberry32(424242), pts=[];
+  for(var i=0;i<48;i++){
+    var m=0.05+rnd()*0.9;
+    var p=Math.min(1,Math.max(0.01,m+(rnd()-0.5)*0.14));
+    pts.push([m,p]);
+  }
+  return pts;
+}
+
+function renderBase(){
+  var W=base.width/dpr, H=base.height/dpr;
+  bctx.setTransform(1,0,0,1,0,0);
+  bctx.clearRect(0,0,base.width,base.height);
+  bctx.fillStyle="#ffffff"; bctx.fillRect(0,0,base.width,base.height);
+  bctx.save(); bctx.scale(dpr,dpr);
+
+  if(state.mode==="field"){
+    var padL=52,padR=78,padT=36,padB=36;
+    var px=padL,py=padT,pw=W-padL-padR,ph=H-padT-padB;
+    if(pw<60||ph<60){bctx.restore();return;}
+    plotRect=[px,py,pw,ph];
+
+    /* heatmap */
+    var off=document.createElement("canvas"); off.width=NX; off.height=NY;
+    var octx=off.getContext("2d"), img=octx.createImageData(NX,NY);
+    for(var i=0;i<NX*NY;i++){
+      var rgb=cmap(state.cmap,state.field[i]);
+      img.data[i*4]=rgb[0]; img.data[i*4+1]=rgb[1]; img.data[i*4+2]=rgb[2]; img.data[i*4+3]=255;
+    }
+    octx.putImageData(img,0,0);
+    bctx.imageSmoothingEnabled=true; bctx.imageSmoothingQuality="high";
+    bctx.drawImage(off,px,py,pw,ph);
+
+    /* grid + axes */
+    var xt=[],yt=[];
+    for(var xv=-10;xv<=30;xv+=10) xt.push([xv+"",(xv-X0)/(X1-X0)]);
+    for(var yv=-10;yv<=20;yv+=10) yt.push([yv+"",(yv-Y0)/(Y1-Y0)]);
+    bctx.strokeStyle="rgba(255,255,255,0.0)";
+    drawFrame(bctx,plotRect,xt,yt,"x, m","y, m");
+
+    /* contours */
+    if(document.getElementById("chk-contours").checked){
+      bctx.beginPath();
+      for(var lv=0.1;lv<0.95;lv+=0.1) drawContours(bctx,state.field,lv,plotRect);
+      bctx.strokeStyle="rgba(20,26,32,0.34)"; bctx.lineWidth=1; bctx.stroke();
+      bctx.beginPath();
+      drawContours(bctx,state.field,0.5,plotRect);
+      bctx.strokeStyle="rgba(20,26,32,0.55)"; bctx.stroke();
+    }
+
+    /* colorbar */
+    var cbx=px+pw+20, cbw=14, cby=py, cbh=ph;
+    var cg=bctx.createLinearGradient(0,cby+cbh,0,cby);
+    for(var t=0;t<=10;t++){
+      var cc=cmap(state.cmap,t/10);
+      cg.addColorStop(t/10,"rgb("+cc[0]+","+cc[1]+","+cc[2]+")");
+    }
+    bctx.fillStyle=cg; bctx.fillRect(cbx,cby,cbw,cbh);
+    bctx.strokeStyle="rgba(0,0,0,0.25)"; bctx.strokeRect(cbx+0.5,cby+0.5,cbw-1,cbh-1);
+    bctx.fillStyle="#5a636d"; bctx.font='10px "Cascadia Mono",Consolas,monospace';
+    bctx.textAlign="left"; bctx.textBaseline="middle";
+    bctx.fillText("D",cbx+cbw+5,cby-10+5);
+    for(t=0;t<=5;t++){
+      var yy=cby+cbh*(1-t/5);
+      bctx.strokeStyle="rgba(0,0,0,0.35)";
+      bctx.beginPath();bctx.moveTo(cbx+cbw,Math.round(yy)+0.5);bctx.lineTo(cbx+cbw+3,Math.round(yy)+0.5);bctx.stroke();
+      bctx.fillText((t/5).toFixed(1),cbx+cbw+7,yy);
+    }
+  }
+  else if(state.mode==="scatter"){
+    var padL2=52,padR2=24,padT2=36,padB2=36;
+    var sx0=padL2,sy0=padT2,sw=W-padL2-padR2,sh=H-padT2-padB2;
+    plotRect=[sx0,sy0,sw,sh];
+    var xt2=[],yt2=[];
+    for(var v2=100;v2<=300;v2+=50) xt2.push([v2+"",(v2-80)/240]);
+    for(var d2=0;d2<=1.001;d2+=0.25) yt2.push([d2.toFixed(2),d2]);
+    drawFrame(bctx,plotRect,xt2,yt2,"v, m/s","Dmax");
+    var pts=scatterData();
+    bctx.fillStyle="rgba(31,95,168,0.72)";
+    for(i=0;i<pts.length;i++){
+      var mx=sx0+sw*(pts[i][0]-80)/240, my=sy0+sh*(1-pts[i][1]);
+      bctx.fillRect(mx-2,my-2,4,4);
+    }
+  }
+  else { /* residual */
+    var padL3=52,padR3=24,padT3=36,padB3=36;
+    var rx0=padL3,ry0=padT3,rw=W-padL3-padR3,rh=H-padT3-padB3;
+    plotRect=[rx0,ry0,rw,rh];
+    var xt3=[],yt3=[];
+    for(var v3=0;v3<=1.001;v3+=0.25){xt3.push([v3.toFixed(2),v3]);yt3.push([v3.toFixed(2),v3]);}
+    drawFrame(bctx,plotRect,xt3,yt3,"measured","predicted");
+    /* identity line */
+    bctx.strokeStyle="rgba(90,99,109,0.6)"; bctx.setLineDash([5,4]);
+    bctx.beginPath();bctx.moveTo(rx0,ry0+rh);bctx.lineTo(rx0+rw,ry0);bctx.stroke();
+    bctx.setLineDash([]);
+    var rp=residualData();
+    bctx.fillStyle="rgba(31,95,168,0.72)";
+    for(i=0;i<rp.length;i++){
+      var qx=rx0+rw*rp[i][0], qy=ry0+rh*(1-rp[i][1]);
+      bctx.fillRect(qx-2,qy-2,4,4);
+    }
+    bctx.fillStyle="#5a636d"; bctx.font='11px "Cascadia Mono",Consolas,monospace';
+    bctx.textAlign="left"; bctx.textBaseline="top";
+    bctx.fillText("R² = "+document.getElementById("r-r2").textContent+" · n = 248",rx0+8,ry0+8);
+  }
+  bctx.restore();
+}
+
+function blit(){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.drawImage(base,0,0);
+}
+
+/* ───────────────────────── probe ───────────────────────── */
+var mouse=null;
+cv.addEventListener("mousemove",function(e){
+  var r=cv.getBoundingClientRect();
+  mouse={x:e.clientX-r.left,y:e.clientY-r.top};
+  updateProbe();
+});
+cv.addEventListener("mouseleave",function(){
+  mouse=null;
+  document.getElementById("sb-probe").textContent="x = — · y = — · D = —";
+  blit();
+});
+function updateProbe(){
+  if(!mouse||!plotRect){return;}
+  var x=plotRect[0],y=plotRect[1],w=plotRect[2],h=plotRect[3];
+  if(mouse.x<x||mouse.x>x+w||mouse.y<y||mouse.y>y+h){blit();return;}
+  blit();
+  if(state.mode==="field"&&document.getElementById("chk-probe").checked){
+    ctx.save(); ctx.scale(dpr,dpr);
+    ctx.strokeStyle="rgba(31,95,168,0.55)"; ctx.setLineDash([4,3]); ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(x+0.5,mouse.y); ctx.lineTo(x+w,mouse.y);
+    ctx.moveTo(mouse.x,y+0.5); ctx.lineTo(mouse.x,y+h);
+    ctx.stroke(); ctx.restore();
+  }
+  if(state.mode==="field"){
+    var fi=Math.round((mouse.x-x)/w*(NX-1)), fj=Math.round((mouse.y-y)/h*(NY-1));
+    fi=Math.max(0,Math.min(NX-1,fi)); fj=Math.max(0,Math.min(NY-1,fj));
+    var dx=X0+fi*(X1-X0)/(NX-1), dy=Y0+fj*(Y1-Y0)/(NY-1), dv=state.field[fj*NX+fi];
+    document.getElementById("sb-probe").textContent=
+      "x = "+dx.toFixed(2)+" m · y = "+dy.toFixed(2)+" m · D = "+dv.toFixed(3);
+  }
+}
+
+/* ───────────────────────── run prediction ──────────────── */
+function pad2(n){return (n<10?"0":"")+n;}
+function nowTime(){var d=new Date();return pad2(d.getHours())+":"+pad2(d.getMinutes())+":"+pad2(d.getSeconds());}
+function setStatus(msg,type){
+  document.getElementById("sb-status").textContent=msg;
+  document.getElementById("sb-dot").className="dot "+(type||"ok");
+}
+
+function readInputs(){
+  state.h=parseFloat(document.getElementById("in-h").value)||0;
+  state.v=Math.max(10,parseFloat(document.getElementById("in-v").value)||150);
+  state.th=Math.max(0,Math.min(90,parseFloat(document.getElementById("in-th").value)||20));
+}
+function updateSubtitle(){
+  var s="h = "+state.h+" m · v = "+state.v+" m/s · θ = "+state.th+"°";
+  document.getElementById("vp-title-sub").textContent=s;
+}
+function updateResults(jitter){
+  var st=state.stats;
+  document.getElementById("r-max").textContent=st.max.toFixed(4);
+  document.getElementById("r-mean").textContent=st.mean.toFixed(4);
+  document.getElementById("r-area").textContent=st.area.toFixed(2)+" m²";
+  if(jitter){
+    var r2=0.9533+(Math.random()-0.5)*0.006;
+    var me=8.40+(Math.random()-0.5)*0.8;
+    var p95=17.60+(Math.random()-0.5)*1.2;
+    document.getElementById("r-r2").textContent=r2.toFixed(4);
+    document.getElementById("r-merr").textContent=me.toFixed(2)+" %";
+    document.getElementById("r-p95").textContent=p95.toFixed(2)+" %";
+    var conf=document.getElementById("r-conf");
+    if(r2>0.93){conf.className="";conf.innerHTML='<span class="dot ok"></span>High';}
+    else{conf.className="med";conf.innerHTML='<span class="dot warn"></span>Medium';}
+  }
+  var d=new Date();
+  document.getElementById("r-time").textContent=
+    d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate())+" "+pad2(d.getHours())+":"+pad2(d.getMinutes());
+}
+function addHistory(kind){
+  state.runNo++;
+  document.getElementById("r-run").textContent="run_"+pad2r(state.runNo);
+  state.history.unshift({
+    t:nowTime(), kind:kind, h:state.h, v:state.v, th:state.th, d:state.stats.max.toFixed(4)
+  });
+  if(state.history.length>14)state.history.pop();
+  renderHistory();
+}
+function pad2r(n){return (n<100?(n<10?"00":"0"):"")+n;}
+function renderHistory(){
+  var el=document.getElementById("hist-list");
+  el.innerHTML="";
+  for(var i=0;i<state.history.length;i++){
+    var r=state.history[i];
+    var div=document.createElement("div");
+    div.className="hist-item";
+    div.innerHTML='<span class="t">'+r.t+'</span><span class="p">'+
+      (r.kind==="batch"?"batch ×44":r.kind==="opt"?"optimum":"h"+r.h+" v"+r.v+" θ"+r.th)+
+      '</span><span class="d">'+r.d+'</span>';
+    (function(rec){div.onclick=function(){
+      document.getElementById("in-h").value=rec.h;
+      document.getElementById("in-v").value=rec.v;
+      document.getElementById("in-th").value=rec.th;
+      runPrediction(false);
+    };})(r);
+    el.appendChild(div);
+  }
+  document.getElementById("hist-count").textContent=state.history.length;
+}
+
+function runPrediction(addHist){
+  readInputs();
+  var btn=document.getElementById("btn-run");
+  btn.disabled=true;
+  setStatus("Computing prediction…","warn");
+  setTimeout(function(){
+    state.field=computeField(state.h,state.v,state.th);
+    state.stats=computeStats(state.field);
+    updateSubtitle();
+    updateResults(true);
+    if(state.mode!=="field"){setMode("field");}
+    else{renderBase();blit();}
+    if(addHist!==false)addHistory("pred");
+    var el=0.3+Math.random()*0.35;
+    document.getElementById("r-elapsed").textContent=el.toFixed(2)+" s";
+    setStatus("Ready · prediction completed in "+el.toFixed(2)+" s","ok");
+    btn.disabled=false;
+  },520);
+}
+document.getElementById("btn-run").addEventListener("click",function(){runPrediction(true);});
+document.getElementById("tb-run").addEventListener("click",function(){runPrediction(true);});
+document.addEventListener("keydown",function(e){
+  if(e.key==="F5"){e.preventDefault();runPrediction(true);}
+});
+
+/* ───────────────────────── view mode switching ─────────── */
+var PANEL_TITLES={
+  dataset:["Dataset — Dmax vs v","impact_tests_2026A.csv · n = 1,240 · SI units"],
+  model:["Damage Field — Model Preview","POD–RBF surrogate · 24 modes"],
+  validation:["Validation — Predicted vs Measured","5-fold cross-validation · n = 248"],
+  prediction:["Damage Field — Single Prediction",""],
+  batch:["Damage Field — Batch Sweep","last case of 44 shown"],
+  aim:["Damage Field — Optimized Case",""],
+  history:["Damage Field — Single Prediction",""],
+  export:["Damage Field — Single Prediction",""]
+};
+var PANEL_MODE={dataset:"scatter",validation:"residual"};
+function setMode(m){
+  state.mode=m;
+  renderBase();blit();
+}
+var navItems=document.querySelectorAll(".nav-item");
+for(var ni=0;ni<navItems.length;ni++){
+  navItems[ni].addEventListener("click",function(){
+    document.querySelectorAll(".nav-item.active").forEach(function(el){el.classList.remove("active");});
+    this.classList.add("active");
+    var p=this.getAttribute("data-panel");
+    document.querySelectorAll(".panel").forEach(function(el){el.classList.remove("show");});
+    document.getElementById("panel-"+p).classList.add("show");
+    var t=PANEL_TITLES[p];
+    document.getElementById("vp-title-main").textContent=t[0];
+    if(t[1])document.getElementById("vp-title-sub").textContent=t[1];
+    else updateSubtitle();
+    setMode(PANEL_MODE[p]||"field");
+  });
+}
+
+/* ───────────────────────── viewport controls ───────────── */
+document.getElementById("sel-cmap").addEventListener("change",function(){
+  state.cmap=this.value; renderBase(); blit();
+});
+["chk-contours","chk-grid"].forEach(function(id){
+  document.getElementById(id).addEventListener("change",function(){renderBase();blit();});
+});
+document.getElementById("chk-probe").addEventListener("change",function(){blit();});
+["tb-contours","tb-grid","tb-probe"].forEach(function(id){
+  document.getElementById(id).addEventListener("click",function(){
+    this.classList.toggle("active");
+    var chk=document.getElementById("chk-"+id.split("-")[1]);
+    chk.checked=this.classList.contains("active");
+    renderBase();blit();
+  });
+});
+
+/* ───────────────────────── model actions ───────────────── */
+document.getElementById("btn-train").addEventListener("click",function(){
+  var btn=this, fill=document.getElementById("train-fill"),
+      prog=document.getElementById("train-prog"),
+      hint=document.getElementById("train-hint"),
+      dot=document.getElementById("model-dot"),
+      st=document.getElementById("model-status");
+  btn.disabled=true; prog.style.display="block"; st.textContent="Training…";
+  dot.className="dot warn";
+  var p=0, epochs=60;
+  var iv=setInterval(function(){
+    p+=3+Math.random()*5;
+    if(p>=100){
+      clearInterval(iv); p=100;
+      fill.style.width="100%";
+      st.textContent="Trained · "+nowTime();
+      dot.className="dot ok";
+      hint.innerHTML="POD basis captures <span class=\"mono\">99.4 %</span> of energy with "+
+        document.getElementById("in-pod").value+" modes.";
+      btn.disabled=false;
+      setTimeout(function(){prog.style.display="none";fill.style.width="0";},600);
+      setStatus("Ready · model converged in 1.8 s","ok");
+    } else {
+      fill.style.width=p+"%";
+      var ep=Math.round(epochs*p/100);
+      st.textContent="Training… epoch "+ep+" / "+epochs+" · loss "+(0.089*Math.pow(1-p/100,2)+0.021).toFixed(4);
+    }
+  },90);
+});
+document.getElementById("btn-save").addEventListener("click",function(){
+  setStatus("Ready · checkpoint saved (pod_rbf_v7.dmck)","ok");
+});
+document.getElementById("btn-load").addEventListener("click",function(){
+  setStatus("Ready · checkpoint loaded (pod_rbf_v7.dmck)","ok");
+});
+
+/* ───────────────────────── validation ──────────────────── */
+document.getElementById("btn-recompute").addEventListener("click",function(){
+  var btn=this; btn.disabled=true;
+  setStatus("Recomputing validation metrics…","warn");
+  setTimeout(function(){
+    updateResults(true);
+    document.getElementById("val-time").textContent=nowTime();
+    setStatus("Ready · validation completed in 1.1 s","ok");
+    btn.disabled=false;
+    if(state.mode==="residual"){renderBase();blit();}
+  },700);
+});
+
+/* ───────────────────────── batch ───────────────────────── */
+document.getElementById("btn-batch").addEventListener("click",function(){
+  var btn=this, prog=document.getElementById("batch-prog"),
+      fill=document.getElementById("batch-fill"),
+      st=document.getElementById("batch-status");
+  btn.disabled=true; prog.style.display="block"; st.textContent="Running…";
+  var p=0;
+  var iv=setInterval(function(){
+    p+=4+Math.random()*6;
+    if(p>=100){
+      clearInterval(iv); fill.style.width="100%";
+      st.textContent="44 / 44 cases · max D 0.9103 · 12.4 s";
+      state.h=parseFloat(document.getElementById("in-vmin").value)||100;
+      state.v=parseFloat(document.getElementById("in-vmax").value)||300;
+      state.th=parseFloat(document.getElementById("in-thmax").value)||60;
+      state.field=computeField(state.h,state.v,state.th);
+      state.stats=computeStats(state.field);
+      updateResults(true);
+      addHistory("batch");
+      setStatus("Ready · batch completed (44 cases, 12.4 s)","ok");
+      btn.disabled=false;
+      setTimeout(function(){prog.style.display="none";fill.style.width="0";},600);
+    } else {
+      fill.style.width=p+"%";
+      st.textContent="Running… "+Math.round(44*p/100)+" / 44 cases";
+    }
+  },80);
+});
+
+/* ───────────────────────── aim optimization ─────────────── */
+document.getElementById("btn-opt").addEventListener("click",function(){
+  var btn=this; btn.disabled=true;
+  setStatus("Optimizing…","warn");
+  setTimeout(function(){
+    var v0=parseFloat(document.getElementById("in-vmax")?document.getElementById("in-vmax").value:300)||300;
+    var bestV=287, bestTh=34;
+    document.getElementById("in-h").value=0;
+    document.getElementById("in-v").value=bestV;
+    document.getElementById("in-th").value=bestTh;
+    state.h=0; state.v=bestV; state.th=bestTh;
+    state.field=computeField(state.h,state.v,state.th);
+    state.stats=computeStats(state.field);
+    updateSubtitle(); updateResults(true);
+    var out=document.getElementById("opt-out");
+    out.style.display="block";
+    document.getElementById("ov-v").textContent=bestV+" m/s";
+    document.getElementById("ov-th").textContent=bestTh+"°";
+    document.getElementById("ov-d").textContent=state.stats.max.toFixed(3);
+    var cep=parseFloat(document.getElementById("in-cep").value)||5;
+    document.getElementById("ov-cep").textContent=(cep*0.842).toFixed(2)+" m";
+    if(state.mode!=="field")setMode("field"); else{renderBase();blit();}
+    addHistory("opt");
+    setStatus("Ready · optimum found (127 evaluations, 2.3 s)","ok");
+    btn.disabled=false;
+  },800);
+});
+
+/* ───────────────────────── history / export ─────────────── */
+document.getElementById("btn-clear-hist").addEventListener("click",function(){
+  state.history=[]; renderHistory();
+  setStatus("Ready · history cleared","ok");
+});
+document.getElementById("btn-export").addEventListener("click",function(){
+  var n=0;
+  if(document.getElementById("ex-csv").checked)n++;
+  if(document.getElementById("ex-png").checked)n++;
+  if(document.getElementById("ex-npz").checked)n++;
+  if(n===0){setStatus("No export format selected","warn");return;}
+  setStatus("Ready · exported "+n+" file(s) → "+document.getElementById("ex-path").value,"ok");
+});
+
+/* ───────────────────────── clock ───────────────────────── */
+setInterval(function(){
+  document.getElementById("sb-time").textContent=nowTime();
+},1000);
+
+/* ───────────────────────── init ────────────────────────── */
+(function init(){
+  /* seed history with a few prior runs */
+  var seeds=[
+    {t:"09:41:02",kind:"pred",h:0,v:120,th:15,d:"0.6417"},
+    {t:"10:15:44",kind:"pred",h:1.5,v:165,th:22,d:"0.7790"},
+    {t:"10:52:31",kind:"opt",h:0,v:265,th:31,d:"0.8402"},
+    {t:"11:30:09",kind:"batch",h:100,v:280,th:45,d:"0.8935"},
+    {t:"12:04:57",kind:"pred",h:0.5,v:140,th:18,d:"0.6988"},
+    {t:"12:47:20",kind:"pred",h:2,v:155,th:25,d:"0.7564"},
+    {t:"12:58:36",kind:"pred",h:0,v:150,th:20,d:"0.8241"}
+  ];
+  state.history=seeds.slice();
+  renderHistory();
+
+  state.field=computeField(state.h,state.v,state.th);
+  state.stats=computeStats(state.field);
+  updateSubtitle();
+  updateResults(false);
+  resize();
+  setStatus("Ready · model pod_rbf_v7 loaded","ok");
+})();
+</script>
+</body>
+</html>

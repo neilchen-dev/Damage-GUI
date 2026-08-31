@@ -13,19 +13,16 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
 from pathlib import Path
 
-import numpy as np
-
-from damage_gui.batch.runner import run_batch
-from damage_gui.batch.schema import parse_batch_csv
-from damage_gui.config import CONDITION_LIMITS
-from damage_gui.data.loader import Condition, DamageDataManager
-from damage_gui.data.preprocessing import coordinate_axes
+from damage_gui.data.loader import DamageDataManager
 from damage_gui.errors import DataValidationError, ModelLoadError
 from damage_gui.logging_setup import setup_logging
 from damage_gui.model.registry import load_model
+from damage_gui.services.batch_service import BatchService
+from damage_gui.services.conditions import validate_condition
+from damage_gui.services.export_service import export_matrix_csv
+from damage_gui.services.prediction_service import PredictionService
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -56,15 +53,9 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _validate_condition(h: float, v: float, deg: float) -> Condition:
-    values = {"h": h, "v": v, "deg": deg}
-    for name, value in values.items():
-        lo, hi, _step = CONDITION_LIMITS[name]
-        if not (lo <= value <= hi):
-            raise DataValidationError(
-                f"{name}={value:g} 超出合法范围 [{lo:g}, {hi:g}]"
-            )
-    return Condition(h=h, v=v, deg=deg)
+def _validate_condition(h: float, v: float, deg: float):
+    """Compatibility adapter retaining the CLI's historical helper name."""
+    return validate_condition(h=h, v=v, deg=deg)
 
 
 def _cmd_info(args: argparse.Namespace) -> int:
@@ -100,42 +91,33 @@ def _cmd_predict(args: argparse.Namespace) -> int:
         print(f"错误: {exc}", file=sys.stderr)
         return 2
 
-    started = time.perf_counter()
-    prediction = bundle.model.predict_matrix(condition)
-    duration_ms = int((time.perf_counter() - started) * 1000)
+    result = PredictionService().predict(bundle, condition)
+    duration_ms = result.elapsed_ms
 
     config = bundle.resolved_config()
     threshold = config.eval_focus_thresholds[-1]
-    peak = float(prediction.max())
-    damage_area = float(np.mean(prediction > threshold))
 
     print(
         f"预测完成: h={args.h:g}, v={args.v:g}, deg={args.deg:g}，"
         f"耗时 {duration_ms} ms"
     )
-    print(f"峰值强度: {peak:.4f}")
-    print(f"毁伤面积占比 (damage > {threshold:g}): {damage_area:.2%}")
+    print(f"峰值强度: {result.peak_intensity:.4f}")
+    print(f"毁伤面积占比 (damage > {threshold:g}): {result.damage_area_ratio:.2%}")
 
     metadata = getattr(bundle, "metadata", None)
     if metadata is not None:
         print(f"模型: {metadata.model_id[:8]}（{metadata.model_type}，"
               f"等级 {metadata.damage_level}，软件 {metadata.app_version}）")
 
-    detector = getattr(bundle, "ood_detector", None)
-    if detector is not None and detector.is_fitted:
-        report = detector.report(condition)
+    if result.ood_report is not None:
+        report = result.ood_report
         print(
             f"模型可信度: {report.level_label} "
             f"(最近工况距离 {report.distance:.3f})"
         )
 
     if args.export:
-        x_axis, y_axis = coordinate_axes(prediction.shape, config)
-        import pandas as pd
-
-        frame = pd.DataFrame(prediction, index=y_axis, columns=x_axis)
-        frame.index.name = "y"
-        frame.to_csv(args.export, encoding="utf-8-sig")
+        export_matrix_csv(result.prediction, args.export, config)
         print(f"预测矩阵已导出: {args.export}")
     return 0
 
@@ -143,7 +125,8 @@ def _cmd_predict(args: argparse.Namespace) -> int:
 def _cmd_batch(args: argparse.Namespace) -> int:
     try:
         bundle = load_model(args.model)
-        parsed = parse_batch_csv(args.input, default_level=bundle.level)
+        batch_service = BatchService()
+        parsed = batch_service.parse_csv(args.input, default_level=bundle.level)
     except (ModelLoadError, DataValidationError) as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 2
@@ -163,10 +146,9 @@ def _cmd_batch(args: argparse.Namespace) -> int:
         percent = done / total * 100.0 if total else 0.0
         print(f"\r[{percent:5.1f}%] {stage}", end="", flush=True)
 
-    report = run_batch(
+    report = batch_service.run(
         bundle,
-        parsed.rows,
-        invalid_rows=parsed.invalid,
+        parsed,
         data_manager=data_manager,
         output_path=args.output,
         db_path=args.db,

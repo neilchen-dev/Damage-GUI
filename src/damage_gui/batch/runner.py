@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 from damage_gui.batch.schema import (
     OUTPUT_COLUMNS,
@@ -25,6 +24,7 @@ from damage_gui.data.preprocessing import evaluation_fields
 from damage_gui.errors import OperationCancelled, PredictionError
 from damage_gui.evaluation.metrics import metric_row
 from damage_gui.model.bundle import ModelBundle
+from damage_gui.services.export_service import export_rows_csv
 from damage_gui.storage.db import resolve_db_path
 from damage_gui.storage.repositories import (
     JobRepository,
@@ -179,6 +179,7 @@ def run_batch(
     output_path: str | Path | None = None,
     db_path: str | Path | None = None,
     input_source: str | None = None,
+    job_id: str | None = None,
     progress: ProgressCallback | None = None,
     cancel_check: CancelCheck | None = None,
 ) -> BatchReport:
@@ -268,10 +269,11 @@ def run_batch(
 
     if output_path is not None:
         _write_output_csv(output_path, outcomes)
+        report.output_path = str(Path(output_path).resolve())
 
     _record_to_db(
         report, metadata=metadata, db_path=resolve_db_path(db_path),
-        input_source=input_source,
+        input_source=input_source, job_id=job_id,
     )
     logger.info(
         "批量预测完成: %d/%d 成功, %d 失败, 耗时 %d ms%s",
@@ -284,11 +286,11 @@ def run_batch(
 def _write_output_csv(
     output_path: str | Path, outcomes: list[BatchRowOutcome]
 ) -> None:
-    path = Path(output_path)
-    frame = pd.DataFrame(
-        [item.to_output_dict() for item in outcomes], columns=list(OUTPUT_COLUMNS)
+    export_rows_csv(
+        [item.to_output_dict() for item in outcomes],
+        OUTPUT_COLUMNS,
+        output_path,
     )
-    frame.to_csv(path, index=False, encoding="utf-8-sig")
 
 
 def _record_to_db(
@@ -297,6 +299,7 @@ def _record_to_db(
     metadata,
     db_path: Path,
     input_source: str | None,
+    job_id: str | None = None,
 ) -> None:
     """批量结果入库（模型 upsert + job + 逐行结果）；失败时 ERROR 日志 +
     db_recorded=False，不影响已产出的计算结果。"""
@@ -313,17 +316,24 @@ def _record_to_db(
         "cancelled": report.cancelled,
         "output_csv": Path(report.output_path).name if report.output_path else None,
     }
-    job_id = jobs.insert_job(
-        kind="batch_prediction",
-        status="CANCELLED" if report.cancelled else "SUCCESS",
-        model_id=report.model_id,
-        input_source=input_source,
-        duration_ms=report.duration_ms,
-        details=details,
-    )
+    final_status = "CANCELLED" if report.cancelled else "SUCCESS"
     if job_id is None:
-        report.db_recorded = False
-        return
+        job_id = jobs.insert_job(
+            kind="batch_prediction",
+            status=final_status,
+            model_id=report.model_id,
+            input_source=input_source,
+            duration_ms=report.duration_ms,
+            details=details,
+        )
+        if job_id is None:
+            report.db_recorded = False
+            return
+    else:
+        # A web caller owns the lifecycle row and closes it only after the
+        # output rows have been recorded.  Avoid exposing a terminal state
+        # before the web job manager has written its final progress snapshot.
+        pass
     results_repo = PredictionResultRepository(db_path)
     report.db_recorded = results_repo.record_batch_results(
         job_id=job_id,

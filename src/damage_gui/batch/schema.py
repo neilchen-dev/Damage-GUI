@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from damage_gui.config import CONDITION_LIMITS
 from damage_gui.errors import DataValidationError
+from damage_gui.services.conditions import validate_condition
 
 REQUIRED_INPUT_COLUMNS = ("h", "v", "deg")
 OPTIONAL_INPUT_COLUMNS = ("job_id", "level")
@@ -56,15 +56,6 @@ class ParsedBatch:
     @property
     def total(self) -> int:
         return len(self.rows) + len(self.invalid)
-
-
-def _check_condition(name: str, value: float, line_no: int, job_id: str) -> float:
-    lo, hi, _step = CONDITION_LIMITS[name]
-    if not (lo <= value <= hi):
-        raise ValueError(
-            f"{name}={value:g} 超出合法范围 [{lo:g}, {hi:g}]"
-        )
-    return value
 
 
 def parse_batch_csv(
@@ -116,12 +107,11 @@ def parse_batch_csv(
             values = {
                 name: float(record[name]) for name in REQUIRED_INPUT_COLUMNS
             }
-            for name, value in values.items():
-                _check_condition(name, value, line_no, job_id)
+            validate_condition(**values)
             rows.append(
                 BatchRowInput(job_id=job_id, level=level, **values)
             )
-        except (TypeError, ValueError) as exc:
+        except (DataValidationError, TypeError, ValueError) as exc:
             invalid.append(
                 InvalidBatchRow(line_no=line_no, job_id=job_id, error=str(exc))
             )

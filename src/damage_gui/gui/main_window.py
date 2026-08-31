@@ -1,57 +1,65 @@
-"""Tkinter 主窗口：训练编排（后台线程）、预测、可视化与瞄准优化。
+"""Tkinter desktop workbench adapter.
 
-训练与批量预测经 TaskManager 在后台线程执行（GUI 不直接持有线程对象），
-事件经队列 + root.after 轮询回到主线程更新界面，支持随时取消；
-预测与瞄准优化在主线程（单次计算耗时短）。
+The window coordinates shared services and presentation components. Scientific
+calculation, persistence, validation, and task execution remain outside this
+module; this class translates user actions into service calls and renders the
+structured results.
 """
 from __future__ import annotations
 
 import logging
-import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
+from typing import TYPE_CHECKING
 
-import numpy as np
-import pandas as pd
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
+import matplotlib
 
-from damage_gui.batch.runner import BatchReport, run_batch
-from damage_gui.batch.schema import parse_batch_csv
 from damage_gui.config import APP_TITLE, CONDITION_LIMITS, CONFIG, Config
-from damage_gui.data.loader import Condition, DamageDataManager, read_damage_matrix
-from damage_gui.data.preprocessing import coordinate_axes, evaluation_fields
 from damage_gui.errors import DataValidationError, TaskStateError
-from damage_gui.evaluation.metrics import extract_core_metrics, metric_row
-from damage_gui.gui.presentation import (
-    MODEL_TYPE_CHOICES,
-    VALIDATION_CHOICES,
-    choice_value,
-    metric_display,
+from damage_gui.gui.dpi import (
+    enable_windows_dpi_awareness,
+    install_tk_scaling_monitor,
+    sync_tk_scaling,
 )
+from damage_gui.gui.navigation import NAVIGATION_LABELS
+from damage_gui.gui.panels import (
+    AimPanel,
+    BatchPanel,
+    DatasetPanel,
+    ExportPanel,
+    HistoryPanel,
+    ModelPanel,
+    PredictionPanel,
+    ValidationPanel,
+)
+from damage_gui.gui.presentation import MODEL_TYPE_CHOICES, VALIDATION_CHOICES, choice_value
 from damage_gui.gui.resources import app_base_dir, resolve_icon_paths
-from damage_gui.gui.widgets import bind_autowrap, rounded_rect
+from damage_gui.gui.styles import configure_styles
+from damage_gui.gui.theme import Theme
+from damage_gui.gui.workbench import WorkbenchShell
 from damage_gui.logging_setup import setup_logging
-from damage_gui.model.bundle import DamageModelService, ModelBundle
-from damage_gui.model.ood import OODReport
-from damage_gui.model.registry import load_model, save_model
 from damage_gui.model.validation import VALIDATION_LABELS
-from damage_gui.optimization.aim import AimOptimizationResult, optimize_aim
+from damage_gui.services.conditions import validate_condition
 from damage_gui.storage.db import resolve_db_path
-from damage_gui.storage.repositories import JobRepository
 from damage_gui.tasks import TaskEvent, TaskManager, TaskStatus
-from damage_gui.visualization.plots import (
-    render_aim_optimization,
-    render_full_prediction,
-    render_heatmaps,
-)
+
+if TYPE_CHECKING:
+    import numpy as np
+    from matplotlib.figure import Figure
+
+    from damage_gui.data.loader import Condition, DamageDataManager
+    from damage_gui.model.bundle import DamageModelService, ModelBundle
+    from damage_gui.model.ood import OODReport
+    from damage_gui.services.aim_service import AimService, AimServiceResult
+    from damage_gui.services.batch_service import BatchReport, BatchService
+    from damage_gui.services.prediction_service import PredictionResult, PredictionService
+    from damage_gui.services.training_service import TrainingResult, TrainingService
 
 
 class DamagePredictionGUI:
-    # 工况输入的合法范围与 Spinbox 步长（config.CONDITION_LIMITS 与批量 CSV
-    # 校验共用同一份定义）；手动键入在 _current_condition 中二次校验，
-    # 防止非法字符或极端负数进入后端插值器导致崩溃。
+    """Desktop workbench controller and service adapter."""
+
     CONDITION_LIMITS = CONDITION_LIMITS
 
     def __init__(self, root: tk.Tk):
@@ -78,43 +86,185 @@ class DamagePredictionGUI:
         self.current_figure: Figure | None = None
         self.current_condition: Condition | None = None
 
-        # 瞄准优化参数状态
         self.spread_mode_var = tk.StringVar(value="CEP")
         self.cep_var = tk.StringVar(value="5.0")
         self.rep_var = tk.StringVar(value="2.0")
         self.dep_var = tk.StringVar(value="2.0")
-        # 相关散布扩展：ρ 相关系数与旋转角 θ（度，留空表示不旋转）
         self.aim_rho_var = tk.StringVar(value="0.0")
         self.aim_theta_var = tk.StringVar(value="")
-        self.current_aim_result: AimOptimizationResult | None = None
+        self.current_aim_result: AimServiceResult | None = None
         self.current_value_field: np.ndarray | None = None
-
-        # 批量预测输入 CSV 路径
         self.batch_csv_var = tk.StringVar(value="")
 
-        # 后台任务管理：训练 / 批量预测统一走 TaskManager
         self.task_manager = TaskManager()
         self._logger = logging.getLogger("damage_gui.gui")
         self._db_path = resolve_db_path()
+        self._data_manager: DamageDataManager | None = None
+        self._service_config = None
+        self._runtime_initialized = False
+        self.training_service: TrainingService | None = None
+        self.prediction_service: PredictionService | None = None
+        self.batch_service: BatchService | None = None
+        self.aim_service: AimService | None = None
 
-        # 耗时统计与 OOD 报告
         self._last_train_time: float | None = None
         self._last_predict_time: float | None = None
         self.last_ood_report: OODReport | None = None
-
-        # 结果区双标签页画布与动画状态
-        self.figures: dict[str, Figure | None] = {"triple": None, "full": None, "aim": None}
-        self.canvases: dict[str, FigureCanvasTkAgg | None] = {
-            "triple": None, "full": None, "aim": None,
-        }
-        self._busy_animating = False
-        self._anim_phase = 0
-        self._syncing_fields = False
+        self.theme = Theme.from_config()
 
         self._apply_window_icon()
         self._configure_styles()
-        self._build_layout()
-        self._set_data_dir(self.data_dir_var.get())
+        self._build_workbench()
+        # Let the first window paint before importing the data-loader graph.
+        # Event handlers still initialize it synchronously if invoked earlier.
+        self.root.after(100, self._initialize_runtime_context)
+
+    # ---------- Shell and contextual panels ----------
+
+    def _configure_styles(self) -> None:
+        configure_styles(self.root, self.theme)
+
+    def _build_workbench(self) -> None:
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(2, weight=1)
+        callbacks = {
+            "load": self.on_load_model,
+            "save": self.on_save_model,
+            "export_csv": self.on_export_csv,
+            "export_png": self.on_export_png,
+            "close": self._on_close,
+            "train": self.on_train,
+            "cancel_training": self.on_cancel_training,
+            "predict": self.on_predict,
+            "stop": self._stop_current_task,
+            "navigate_dataset": lambda: self._navigate("dataset"),
+            "navigate_prediction": lambda: self._navigate("prediction"),
+            "navigate_batch": lambda: self._navigate("batch"),
+            "navigate_aim": lambda: self._navigate("aim"),
+            "navigate_history": lambda: self._navigate("history"),
+            "navigate_export": lambda: self._navigate("export"),
+        }
+        self.workbench = WorkbenchShell(
+            self.root,
+            theme=self.theme,
+            callbacks=callbacks,
+            on_navigate=self._navigate,
+            on_view_change=self._on_view_change,
+        )
+        self.navigation = self.workbench.navigation
+        self.properties = self.workbench.properties
+        self.visualization = self.workbench.visualization
+        self.results = self.workbench.results
+        self.status_bar = self.workbench.status
+        self.status_var = self.status_bar.status_var
+
+        self.figures = self.visualization.figures
+        self.canvases = self.visualization.canvases
+        self._build_context_panels()
+        self._navigate("dataset")
+        self.results.reset()
+        self._update_model_status()
+        self._set_busy(False)
+
+    def _build_context_panels(self) -> None:
+        self.dataset_panel = DatasetPanel(
+            self.properties.body,
+            data_dir_var=self.data_dir_var,
+            level_var=self.level_var,
+            on_browse=self.on_browse_data,
+        )
+        self.model_panel = ModelPanel(
+            self.properties.body,
+            model_type_var=self.model_type_var,
+            pod_components_var=self.pod_components_var,
+            validation_var=self.validation_var,
+            on_train=self.on_train,
+            on_cancel=self.on_cancel_training,
+            on_load=self.on_load_model,
+            on_save=self.on_save_model,
+        )
+        self.validation_panel = ValidationPanel(
+            self.properties.body, validation_var=self.validation_var
+        )
+        self.prediction_panel = PredictionPanel(
+            self.properties.body,
+            h_var=self.h_var,
+            v_var=self.v_var,
+            deg_var=self.deg_var,
+            on_predict=self.on_predict,
+        )
+        self.batch_panel = BatchPanel(
+            self.properties.body,
+            csv_var=self.batch_csv_var,
+            on_browse=self.on_browse_batch_csv,
+            on_run=self.on_run_batch,
+            on_cancel=lambda: self.task_manager.cancel("batch"),
+        )
+        self.aim_panel = AimPanel(
+            self.properties.body,
+            spread_mode_var=self.spread_mode_var,
+            cep_var=self.cep_var,
+            rep_var=self.rep_var,
+            dep_var=self.dep_var,
+            rho_var=self.aim_rho_var,
+            theta_var=self.aim_theta_var,
+            on_optimize=self.on_optimize_aim,
+        )
+        self.history_panel = HistoryPanel(self.properties.body, db_path=str(self._db_path))
+        self.export_panel = ExportPanel(
+            self.properties.body, on_csv=self.on_export_csv, on_png=self.on_export_png
+        )
+        for key, panel in (
+            ("dataset", self.dataset_panel),
+            ("model", self.model_panel),
+            ("validation", self.validation_panel),
+            ("prediction", self.prediction_panel),
+            ("batch", self.batch_panel),
+            ("aim", self.aim_panel),
+            ("history", self.history_panel),
+            ("export", self.export_panel),
+        ):
+            self.properties.add(key, panel)
+
+    def _navigate(self, key: str) -> None:
+        if key not in NAVIGATION_LABELS:
+            return
+        self.navigation.select(key)
+        self.properties.show(key, NAVIGATION_LABELS[key])
+
+    def _on_view_change(self, key: str) -> None:
+        figure = self.visualization.figures.get(key)
+        self.current_figure = figure
+        self._sync_visualization_context()
+
+    def _sync_visualization_context(self) -> None:
+        """Keep the viewport header tied to the figure currently selected."""
+        if self.visualization.current_view == "aim":
+            if self.current_aim_result is None:
+                self.visualization.set_context(
+                    "Damage Field — Aim Optimization", "Run Optimize after a prediction"
+                )
+                return
+            result = self.current_aim_result
+            self.visualization.set_context(
+                "Damage Field — Aim Optimization",
+                f"{result.spread_mode} · best point ({result.best_x:.1f}, {result.best_y:.1f}) m",
+            )
+        elif self.current_condition is not None and self.current_prediction is not None:
+            condition = self.current_condition
+            self.visualization.set_context(
+                "Damage Field — Single Prediction",
+                f"h = {condition.h:g} m · v = {condition.v:g} m/s · θ = {condition.deg:g}°",
+            )
+        else:
+            self.visualization.set_context("Damage Field", "No prediction yet.")
+
+    def _stop_current_task(self) -> None:
+        cancelled = False
+        for kind in ("training", "batch"):
+            cancelled = self.task_manager.cancel(kind) or cancelled
+        if cancelled:
+            self._set_status("正在取消当前任务…", kind="busy")
 
     def _apply_window_icon(self) -> None:
         ico_path, png_path = resolve_icon_paths()
@@ -133,803 +283,133 @@ class DamagePredictionGUI:
         except tk.TclError:
             self._icon_image = None
 
-    def _configure_styles(self) -> None:
-        self.root.configure(bg=CONFIG.ui_bg)
-        style = ttk.Style(self.root)
-
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
-
-        default_font = ("Microsoft YaHei", 10)
-        title_font = ("Microsoft YaHei", 12, "bold")
-        hero_font = ("Microsoft YaHei", 18, "bold")
-        small_font = ("Microsoft YaHei", 9)
-
-        style.configure(".", font=default_font)
-        style.configure("App.TFrame", background=CONFIG.ui_bg)
-        style.configure("Card.TFrame", background=CONFIG.ui_panel_bg, relief="flat")
-        style.configure("Soft.TFrame", background=CONFIG.ui_soft_bg, relief="flat")
-        style.configure(
-            "Title.TLabel",
-            background=CONFIG.ui_bg,
-            foreground=CONFIG.ui_text,
-            font=hero_font,
-        )
-        style.configure(
-            "Subtitle.TLabel",
-            background=CONFIG.ui_bg,
-            foreground=CONFIG.ui_muted,
-            font=small_font,
-        )
-        style.configure(
-            "CardTitle.TLabel",
-            background=CONFIG.ui_panel_bg,
-            foreground=CONFIG.ui_text,
-            font=title_font,
-        )
-        style.configure(
-            "CardText.TLabel",
-            background=CONFIG.ui_panel_bg,
-            foreground=CONFIG.ui_muted,
-            font=small_font,
-        )
-        style.configure(
-            "Section.TLabel",
-            background=CONFIG.ui_panel_bg,
-            foreground=CONFIG.ui_primary,
-            font=("Microsoft YaHei", 10, "bold"),
-        )
-        style.configure(
-            "SoftSection.TLabel",
-            background=CONFIG.ui_soft_bg,
-            foreground=CONFIG.ui_primary,
-            font=("Microsoft YaHei", 10, "bold"),
-        )
-        style.configure(
-            "FieldLabel.TLabel",
-            background=CONFIG.ui_panel_bg,
-            foreground=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9),
-        )
-        style.configure(
-            "App.Horizontal.TProgressbar",
-            troughcolor=CONFIG.ui_soft_bg,
-            background=CONFIG.ui_accent,
-            bordercolor=CONFIG.ui_border,
-            lightcolor=CONFIG.ui_accent,
-            darkcolor=CONFIG.ui_accent,
-            thickness=8,
-        )
-        style.configure(
-            "App.TNotebook",
-            background=CONFIG.ui_bg,
-            borderwidth=0,
-            tabmargins=(0, 0, 0, 6),
-        )
-        style.configure(
-            "App.TNotebook.Tab",
-            font=("Microsoft YaHei", 9),
-            padding=(18, 6),
-            background=CONFIG.ui_bg,
-            foreground=CONFIG.ui_muted,
-            borderwidth=0,
-        )
-        style.map(
-            "App.TNotebook.Tab",
-            background=[("selected", CONFIG.ui_primary)],
-            foreground=[("selected", "#FFFFFF")],
-        )
-        style.configure(
-            "Accent.TButton",
-            font=("Microsoft YaHei", 10),
-            padding=(10, 10),
-            background=CONFIG.ui_primary,
-            foreground="#FFFFFF",
-            borderwidth=0,
-            focusthickness=0,
-        )
-        style.map(
-            "Accent.TButton",
-            background=[
-                ("active", CONFIG.ui_primary_dark),
-                ("pressed", CONFIG.ui_primary_dark),
-                ("disabled", "#9FAFD6"),
-            ],
-            foreground=[("disabled", "#F1F4FA"), ("!disabled", "#FFFFFF")],
-        )
-        style.configure(
-            "Ghost.TButton",
-            font=("Microsoft YaHei", 9),
-            padding=(10, 7),
-            background=CONFIG.ui_panel_bg,
-            foreground=CONFIG.ui_primary,
-            bordercolor=CONFIG.ui_primary,
-            lightcolor=CONFIG.ui_panel_bg,
-            darkcolor=CONFIG.ui_panel_bg,
-            borderwidth=1,
-            focusthickness=0,
-        )
-        style.map(
-            "Ghost.TButton",
-            background=[("active", "#EFF4FB"), ("pressed", "#E4ECF7")],
-        )
-        style.configure(
-            "Primary.TButton",
-            font=("Microsoft YaHei", 10),
-            padding=(10, 9),
-            background=CONFIG.ui_primary,
-            foreground="#ffffff",
-            borderwidth=0,
-            focusthickness=0,
-        )
-        style.map(
-            "Primary.TButton",
-            background=[
-                ("active", CONFIG.ui_primary_dark),
-                ("pressed", CONFIG.ui_primary_dark),
-            ],
-            foreground=[("disabled", "#dfe7ed"), ("!disabled", "#ffffff")],
-        )
-        style.configure(
-            "Secondary.TButton",
-            font=("Microsoft YaHei", 10),
-            padding=(10, 8),
-            background=CONFIG.ui_soft_bg,
-            foreground=CONFIG.ui_text,
-            bordercolor=CONFIG.ui_border,
-            lightcolor=CONFIG.ui_soft_bg,
-            darkcolor=CONFIG.ui_soft_bg,
-        )
-        style.map(
-            "Secondary.TButton",
-            background=[("active", "#e6edf2"), ("pressed", "#dce5eb")],
-        )
-        style.configure(
-            "App.TEntry",
-            fieldbackground="#FFFFFF",
-            foreground=CONFIG.ui_text,
-            bordercolor=CONFIG.ui_border,
-            lightcolor=CONFIG.ui_border,
-            darkcolor=CONFIG.ui_border,
-            padding=6,
-        )
-        style.configure(
-            "App.TSpinbox",
-            fieldbackground="#FFFFFF",
-            foreground=CONFIG.ui_text,
-            bordercolor=CONFIG.ui_border,
-            lightcolor=CONFIG.ui_border,
-            darkcolor=CONFIG.ui_border,
-            arrowcolor=CONFIG.ui_primary,
-            arrowsize=12,
-            padding=6,
-        )
-        style.configure(
-            "App.TCombobox",
-            fieldbackground="#FFFFFF",
-            foreground=CONFIG.ui_text,
-            bordercolor=CONFIG.ui_border,
-            lightcolor=CONFIG.ui_border,
-            darkcolor=CONFIG.ui_border,
-            padding=5,
-        )
-        style.configure(
-            "Line.TSeparator",
-            background=CONFIG.ui_border,
-        )
-
-    def _build_layout(self) -> None:
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(1, weight=1)
-
-        self._build_header()
-
-        body = ttk.Frame(self.root, style="App.TFrame", padding=(18, 14, 18, 16))
-        body.grid(row=1, column=0, sticky="nsew")
-        body.columnconfigure(0, weight=0, minsize=320)
-        body.columnconfigure(1, weight=1)
-        body.rowconfigure(0, weight=1)
-
-        self._build_left_panel(body)
-        self._build_right_panel(body)
-
-        self._update_key_metrics(None, None)
-        self._update_summary_card(None)
-        self._update_detail_card()
-        self._update_advice_card(None, None, "")
-
-    # ---------- 顶部标题栏 ----------
-
-    def _build_header(self) -> None:
-        header = tk.Frame(self.root, bg=CONFIG.ui_header_bg)
-        header.grid(row=0, column=0, sticky="ew")
-        inner = tk.Frame(header, bg=CONFIG.ui_header_bg)
-        inner.pack(fill="x", padx=20, pady=(7, 7))
-
-        icon = tk.Canvas(
-            inner, width=28, height=28, bg=CONFIG.ui_header_bg, highlightthickness=0
-        )
-        icon.pack(side="left", padx=(0, 10))
-        self._draw_header_icon(icon)
-
-        # 顶部保持纯净：模型类型与指标信息在底部卡片中已有体现，此处只保留标题
-        tk.Label(
-            inner,
-            text="基于数据驱动的毁伤效能快速评估",
-            bg=CONFIG.ui_header_bg,
-            fg=CONFIG.ui_header_fg,
-            font=("Microsoft YaHei", 13),
-        ).pack(side="left")
-
-    @staticmethod
-    def _draw_header_icon(canvas: tk.Canvas) -> None:
-        """扁平应用图标：高亮圆角方块 + 导弹剪影 + 数据点。"""
-        rounded_rect(canvas, 1, 1, 27, 27, 7, fill="#3B5BC0", outline="")
-        canvas.create_polygon(14, 5, 17.5, 13, 10.5, 13, fill="#FFFFFF", outline="")
-        canvas.create_rectangle(12.5, 13, 15.5, 19, fill="#FFFFFF", outline="")
-        for cx, cy in ((9, 22), (14, 23.5), (19, 22)):
-            canvas.create_oval(cx - 1.4, cy - 1.4, cx + 1.4, cy + 1.4, fill="#B6C3E4", outline="")
-
-    # ---------- 圆角卡片工厂 ----------
-
-    def _make_card(
-        self,
-        parent: tk.Misc,
-        title: str | None = None,
-        soft: bool = False,
-    ) -> tuple[tk.Canvas, tk.Frame, str]:
-        """创建圆角+微阴影的信息卡片（Canvas 绘制），返回 (外框, 内容容器, 背景色)。"""
-        bg = CONFIG.ui_panel_bg
-        pad_x, pad_y = 16, 13
-        holder = tk.Canvas(parent, bg=CONFIG.ui_bg, highlightthickness=0, bd=0)
-        content = tk.Frame(holder, bg=bg)
-        window_id = holder.create_window(pad_x, pad_y, window=content, anchor="nw")
-
-        def redraw(_event: object = None) -> None:
-            width = holder.winfo_width()
-            if width <= 1:
-                return
-            holder.itemconfigure(window_id, width=max(width - 2 * pad_x - 3, 10))
-            wanted = content.winfo_reqheight() + 2 * pad_y + 3
-            if int(holder.cget("height")) != wanted:
-                holder.configure(height=wanted)
-            height = max(holder.winfo_height(), wanted)
-            holder.delete("cardbg")
-            # 微弱阴影：向右下偏移 2px 的浅灰圆角矩形
-            rounded_rect(holder, 3, 4, width - 1, height - 1, 9,
-                         fill=CONFIG.ui_shadow, outline="", tags="cardbg")
-            rounded_rect(holder, 0, 0, width - 3, height - 4, 8,
-                         fill=bg, outline="", tags="cardbg")
-            holder.tag_lower("cardbg")
-
-        holder.bind("<Configure>", redraw)
-        content.bind("<Configure>", redraw)
-        if title:
-            # 统一对齐基准：卡片标题一律加粗、靠左上
-            tk.Label(
-                content, text=title, bg=bg, fg=CONFIG.ui_muted,
-                font=("Microsoft YaHei", 9, "bold"),
-            ).pack(anchor="nw", pady=(0, 8))
-        return holder, content, bg
-
-    # ---------- 左侧：参数配置（可滚动） ----------
-
-    def _build_left_panel(self, body: ttk.Frame) -> None:
-        # Canvas + Scrollbar 实现左侧可滚动容器
-        container = ttk.Frame(body, style="App.TFrame")
-        container.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
-        container.rowconfigure(0, weight=1)
-        container.columnconfigure(0, weight=1)
-        container.columnconfigure(1, weight=0)
-
-        canvas = tk.Canvas(container, highlightthickness=0, bg=CONFIG.ui_bg)
-        canvas.grid(row=0, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        scrollbar.grid(row=0, column=1, sticky="ns")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        # 内部 Frame 承载所有卡片
-        left = ttk.Frame(canvas, style="App.TFrame")
-        left.columnconfigure(0, weight=1)
-        self._left_canvas_window = canvas.create_window((0, 0), window=left, anchor="nw")
-
-        # 内容变化时更新 scrollregion
-        def _on_left_configure(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-            # 确保内部 frame 宽度与 canvas 一致（水平不滚动）
-            canvas.itemconfig(self._left_canvas_window, width=event.width)
-
-        canvas.bind("<Configure>", _on_left_configure)
-
-        # 鼠标滚轮支持
-        def _on_mousewheel(event):
-            # Windows: event.delta 通常为 ±120 的倍数
-            canvas.yview_scroll(int(-event.delta / 120), "units")
-
-        def _on_enter(event):
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-        def _on_leave(event):
-            canvas.unbind_all("<MouseWheel>")
-
-        canvas.bind("<Enter>", _on_enter)
-        canvas.bind("<Leave>", _on_leave)
-
-        self._left_canvas = canvas
-
-        card, box, bg = self._make_card(left, "模型操作")
-        card.grid(row=0, column=0, sticky="ew")
-        tk.Label(
-            box, text="数据目录", bg=bg, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9),
-        ).pack(anchor="w")
-        # 路径选择器紧凑化：输入框与浏览按钮横向并排，节省纵向空间
-        dir_row = tk.Frame(box, bg=bg)
-        dir_row.pack(fill="x", pady=(4, 0))
-        ttk.Entry(dir_row, textvariable=self.data_dir_var, style="App.TEntry").pack(
-            side="left", fill="x", expand=True
-        )
-        ttk.Button(
-            dir_row, text="浏览…", command=self.on_browse_data,
-            style="Ghost.TButton", width=6,
-        ).pack(side="left", padx=(6, 0))
-        tk.Label(
-            box, text="毁伤等级", bg=bg, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9),
-        ).pack(anchor="w", pady=(12, 0))
-        ttk.Combobox(
-            box,
-            textvariable=self.level_var,
-            values=["F", "M", "P"],
-            state="readonly",
-            style="App.TCombobox",
-        ).pack(fill="x", pady=(4, 0))
-
-        # 模型类型：RBF 插值场 / POD-RBF 降阶模型
-        tk.Label(
-            box, text="模型类型", bg=bg, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9),
-        ).pack(anchor="w", pady=(12, 0))
-        ttk.Combobox(
-            box,
-            textvariable=self.model_type_var,
-            values=[label for label, _ in MODEL_TYPE_CHOICES],
-            state="readonly",
-            style="App.TCombobox",
-        ).pack(fill="x", pady=(4, 0))
-
-        # POD 主成分数（仅 POD-RBF 生效）
-        pod_row = tk.Frame(box, bg=bg)
-        pod_row.pack(fill="x", pady=(8, 0))
-        tk.Label(pod_row, text="POD 主成分数 K", bg=bg, fg=CONFIG.ui_muted,
-                 font=("Microsoft YaHei", 9)).pack(side="left")
-        ttk.Spinbox(
-            pod_row, textvariable=self.pod_components_var,
-            from_=2, to=200, increment=1, width=6,
-            style="App.TSpinbox",
-        ).pack(side="right")
-
-        # 验证方式：随机留出 / 整层留出 / 角落留出
-        tk.Label(
-            box, text="验证方式", bg=bg, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9),
-        ).pack(anchor="w", pady=(12, 0))
-        ttk.Combobox(
-            box,
-            textvariable=self.validation_var,
-            values=[label for label, _ in VALIDATION_CHOICES],
-            state="readonly",
-            style="App.TCombobox",
-        ).pack(fill="x", pady=(4, 0))
-
-        # 模型操作为低频配置操作，统一使用次要按钮样式（白底蓝边 / 浅灰底），
-        # 视觉权重让位于高频核心操作"开始预测"（Accent 深蓝高亮）。
-        buttons = tk.Frame(box, bg=bg)
-        buttons.pack(fill="x", pady=(16, 0))
-        buttons.columnconfigure((0, 1), weight=1)
-        self.train_button = ttk.Button(
-            buttons, text="训练模型", command=self.on_train, style="Ghost.TButton"
-        )
-        self.train_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self.cancel_button = ttk.Button(
-            buttons, text="取消训练", command=self.on_cancel_training,
-            style="Secondary.TButton", state="disabled",
-        )
-        self.cancel_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
-        self.save_button = ttk.Button(
-            buttons, text="保存模型", command=self.on_save_model,
-            style="Secondary.TButton",
-        )
-        self.save_button.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(10, 0))
-        self.load_button = ttk.Button(
-            buttons, text="加载模型...", command=self.on_load_model,
-            style="Secondary.TButton",
-        )
-        self.load_button.grid(row=1, column=1, sticky="ew", padx=(6, 0), pady=(10, 0))
-
-        card2, box2, bg2 = self._make_card(left, "工况输入")
-        card2.grid(row=1, column=0, sticky="ew", pady=(14, 0))
-        for icon, label, variable, key in (
-            ("⛰", "高度 h (m)", self.h_var, "h"),
-            ("➤", "速度 v (m/s)", self.v_var, "v"),
-            ("∠", "角度 deg (°)", self.deg_var, "deg"),
-        ):
-            lo, hi, step = self.CONDITION_LIMITS[key]
-            self._build_condition_field(box2, bg2, icon, label, variable, lo, hi, step)
-
-        self.predict_button = ttk.Button(
-            box2, text="开始预测", command=self.on_predict, style="Accent.TButton"
-        )
-        self.predict_button.pack(fill="x", pady=(14, 0))
-        export_row = tk.Frame(box2, bg=bg2)
-        export_row.pack(fill="x", pady=(10, 0))
-        export_row.columnconfigure((0, 1), weight=1)
-        ttk.Button(
-            export_row, text="导出 CSV", command=self.on_export_csv,
-            style="Ghost.TButton",
-        ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ttk.Button(
-            export_row, text="导出 PNG", command=self.on_export_png,
-            style="Ghost.TButton",
-        ).grid(row=0, column=1, sticky="ew", padx=(6, 0))
-
-        # 批量预测卡片：CSV 批量工况 → 后台任务 → 结果 CSV + SQLite 追溯
-        card_b, box_b, bg_b = self._make_card(left, "批量预测")
-        card_b.grid(row=2, column=0, sticky="ew", pady=(14, 0))
-        tk.Label(
-            box_b, text="输入 CSV（列: job_id,h,v,deg,level）", bg=bg_b,
-            fg=CONFIG.ui_muted, font=("Microsoft YaHei", 9),
-        ).pack(anchor="w")
-        batch_row = tk.Frame(box_b, bg=bg_b)
-        batch_row.pack(fill="x", pady=(4, 0))
-        ttk.Entry(batch_row, textvariable=self.batch_csv_var, style="App.TEntry").pack(
-            side="left", fill="x", expand=True
-        )
-        ttk.Button(
-            batch_row, text="浏览…", command=self.on_browse_batch_csv,
-            style="Ghost.TButton", width=6,
-        ).pack(side="left", padx=(6, 0))
-        batch_buttons = tk.Frame(box_b, bg=bg_b)
-        batch_buttons.pack(fill="x", pady=(10, 0))
-        batch_buttons.columnconfigure((0, 1), weight=1)
-        self.batch_button = ttk.Button(
-            batch_buttons, text="运行批量预测", command=self.on_run_batch,
-            style="Secondary.TButton",
-        )
-        self.batch_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        self.cancel_batch_button = ttk.Button(
-            batch_buttons, text="取消批量",
-            command=lambda: self.task_manager.cancel("batch"),
-            style="Secondary.TButton", state="disabled",
-        )
-        self.cancel_batch_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
-
-        # 瞄准优化卡片
-        card3, box3, bg3 = self._make_card(left, "瞄准优化")
-        card3.grid(row=3, column=0, sticky="ew", pady=(14, 0))
-
-        tk.Label(box3, text="散布模式", bg=bg3, fg=CONFIG.ui_muted,
-                 font=("Microsoft YaHei", 9)).pack(anchor="w")
-        mode_row = tk.Frame(box3, bg=bg3)
-        mode_row.pack(fill="x", pady=(4, 0))
-
-        def _on_spread_mode_change(*_args):
-            mode = self.spread_mode_var.get()
-            if mode == "CEP":
-                self._aim_cep_frame.pack(fill="x", pady=(10, 0))
-                self._aim_rep_dep_frame.pack_forget()
-            else:
-                self._aim_rep_dep_frame.pack(fill="x", pady=(10, 0))
-                self._aim_cep_frame.pack_forget()
-
-        ttk.Combobox(
-            mode_row, textvariable=self.spread_mode_var,
-            values=["CEP", "REP_DEP"], state="readonly",
-            style="App.TCombobox",
-        ).pack(fill="x")
-        self.spread_mode_var.trace_add("write", _on_spread_mode_change)
-
-        # CEP 输入
-        self._aim_cep_frame = tk.Frame(box3, bg=bg3)
-        self._aim_cep_frame.pack(fill="x", pady=(10, 0))
-        tk.Label(self._aim_cep_frame, text="CEP (m)", bg=bg3, fg=CONFIG.ui_muted,
-                 font=("Microsoft YaHei", 9)).pack(anchor="w")
-        ttk.Entry(self._aim_cep_frame, textvariable=self.cep_var,
-                  style="App.TEntry").pack(fill="x", pady=(4, 0))
-
-        # REP/DEP 输入（含相关散布扩展：ρ 与旋转角 θ）
-        self._aim_rep_dep_frame = tk.Frame(box3, bg=bg3)
-        tk.Label(self._aim_rep_dep_frame, text="REP (m)", bg=bg3, fg=CONFIG.ui_muted,
-                 font=("Microsoft YaHei", 9)).pack(anchor="w")
-        ttk.Entry(self._aim_rep_dep_frame, textvariable=self.rep_var,
-                  style="App.TEntry").pack(fill="x", pady=(4, 0))
-        tk.Label(self._aim_rep_dep_frame, text="DEP (m)", bg=bg3, fg=CONFIG.ui_muted,
-                 font=("Microsoft YaHei", 9)).pack(anchor="w", pady=(8, 0))
-        ttk.Entry(self._aim_rep_dep_frame, textvariable=self.dep_var,
-                  style="App.TEntry").pack(fill="x", pady=(4, 0))
-        # ρ 与 θ 并排输入：ρ ∈ (−1,1)；θ 留空 = 轴对齐（给出时 REP 沿 θ 主轴旋转）
-        corr_row = tk.Frame(self._aim_rep_dep_frame, bg=bg3)
-        corr_row.pack(fill="x", pady=(8, 0))
-        corr_left = tk.Frame(corr_row, bg=bg3)
-        corr_left.pack(side="left", fill="x", expand=True)
-        tk.Label(corr_left, text="相关系数 ρ", bg=bg3, fg=CONFIG.ui_muted,
-                 font=("Microsoft YaHei", 9)).pack(anchor="w")
-        ttk.Entry(corr_left, textvariable=self.aim_rho_var,
-                  style="App.TEntry").pack(fill="x", pady=(4, 0))
-        corr_right = tk.Frame(corr_row, bg=bg3)
-        corr_right.pack(side="left", fill="x", expand=True, padx=(8, 0))
-        tk.Label(corr_right, text="旋转角 θ (°, 可空)", bg=bg3, fg=CONFIG.ui_muted,
-                 font=("Microsoft YaHei", 9)).pack(anchor="w")
-        ttk.Entry(corr_right, textvariable=self.aim_theta_var,
-                  style="App.TEntry").pack(fill="x", pady=(4, 0))
-
-        self.optimize_button = ttk.Button(
-            box3, text="计算最佳瞄准点", command=self.on_optimize_aim,
-            style="Accent.TButton",
-        )
-        self.optimize_button.pack(fill="x", pady=(14, 0))
-
-    def _build_condition_field(
-        self,
-        parent: tk.Frame,
-        bg: str,
-        icon: str,
-        label: str,
-        variable: tk.StringVar,
-        from_: float,
-        to: float,
-        increment: float,
-    ) -> None:
-        """带小图标的现代化输入字段（Spinbox 微调器，限制数值范围防误输入）。"""
-        field = tk.Frame(parent, bg=bg)
-        field.pack(fill="x", pady=(0, 12))
-        head = tk.Frame(field, bg=bg)
-        head.pack(fill="x")
-        tk.Label(head, text=icon, bg=bg, fg=CONFIG.ui_primary,
-                 font=("Microsoft YaHei", 10)).pack(side="left")
-        tk.Label(head, text=f" {label}", bg=bg, fg=CONFIG.ui_muted,
-                 font=("Microsoft YaHei", 9)).pack(side="left")
-        ttk.Spinbox(
-            field,
-            textvariable=variable,
-            from_=from_,
-            to=to,
-            increment=increment,
-            style="App.TSpinbox",
-            font=("Microsoft YaHei", 11),
-        ).pack(fill="x", pady=(5, 0))
-
-    # ---------- 右侧：核心展示区 ----------
-
-    def _build_right_panel(self, body: ttk.Frame) -> None:
-        right = ttk.Frame(body, style="App.TFrame")
-        right.grid(row=0, column=1, sticky="nsew")
-        right.columnconfigure(0, weight=1)
-        right.rowconfigure(1, weight=1)
-
-        tk.Label(
-            right,
-            text="流程：选择数据目录与等级 → 选择模型类型与验证方式 → 训练或加载模型 "
-            "→ 输入工况开始预测 → 查看热力图、指标与可信度 → 导出结果",
-            bg=CONFIG.ui_bg,
-            fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9),
-            anchor="w",
-        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
-
-        self.result_tabs = ttk.Notebook(right, style="App.TNotebook")
-        self.result_tabs.grid(row=1, column=0, sticky="nsew")
-        self.tab_frames: dict[str, tk.Frame] = {}
-        for key, label in (("triple", "对比三联图"), ("full", "全视图预测图"), ("aim", "瞄准优化")):
-            frame = tk.Frame(self.result_tabs, bg=CONFIG.ui_bg)
-            frame.columnconfigure(0, weight=1)
-            frame.rowconfigure(0, weight=1)
-            self.result_tabs.add(frame, text=f"  {label}  ")
-            self.tab_frames[key] = frame
-            tk.Label(
-                frame,
-                text="训练模型并执行预测后，此处显示毁伤热力图",
-                bg=CONFIG.ui_bg,
-                fg=CONFIG.ui_muted,
-                font=("Microsoft YaHei", 10),
-            ).grid(row=0, column=0)
-        # 画布在隐藏标签页里创建时拿不到真实尺寸，切换显示会残留错误布局
-        # （单张大图向右偏移）；切换标签页时按当前尺寸强制重排并重绘。
-        self.result_tabs.bind("<<NotebookTabChanged>>", self._on_result_tab_changed)
-
-        report = ttk.Frame(right, style="App.TFrame")
-        report.grid(row=2, column=0, sticky="ew", pady=(14, 0))
-        report.columnconfigure((0, 1, 2, 3, 4), weight=1, uniform="report")
-
-        # 运行状态卡（与指标卡并排的微型仪表盘）：核心状态字居中放大突出
-        card0, box0, bg0 = self._make_card(report, "运行状态")
-        card0.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-        state_row = tk.Frame(box0, bg=bg0)
-        state_row.pack(pady=(2, 0))
-        self.status_dot = tk.Label(
-            state_row, text="●", bg=bg0, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 11),
-        )
-        self.status_dot.pack(side="left", padx=(0, 6))
-        self.state_label = tk.Label(
-            state_row, text="就绪", bg=bg0, fg=CONFIG.ui_text,
-            font=("Microsoft YaHei", 18, "bold"),
-        )
-        self.state_label.pack(side="left")
-        progress_row = tk.Frame(box0, bg=bg0)
-        progress_row.pack(fill="x", pady=(8, 0))
-        self.progress_percent = tk.Label(
-            progress_row, text="0%", bg=bg0, fg=CONFIG.ui_primary,
-            font=("Microsoft YaHei", 9), width=4, anchor="e",
-        )
-        self.progress_percent.pack(side="right", padx=(4, 0))
-        self.progress_var = tk.DoubleVar(value=0.0)
-        self.progress_bar = ttk.Progressbar(
-            progress_row,
-            variable=self.progress_var,
-            maximum=100.0,
-            style="App.Horizontal.TProgressbar",
-        )
-        self.progress_bar.pack(side="left", fill="x", expand=True, pady=3)
-        self.stage_label = tk.Label(
-            box0, text="等待任务...", bg=bg0, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9), anchor="w", justify="left",
-        )
-        self.stage_label.pack(anchor="w", pady=(4, 0), fill="x")
-        bind_autowrap(self.stage_label)
-        self.status_message = tk.Label(
-            box0, text="请选择数据目录并训练模型。", bg=bg0, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9), anchor="w", justify="left",
-        )
-        self.status_message.pack(anchor="w", pady=(4, 0), fill="x")
-        bind_autowrap(self.status_message)
-
-        # 关键指标卡：核心大字指标在卡片正中放大突出
-        card, box, bg = self._make_card(report, "关键指标报告")
-        card.grid(row=0, column=1, sticky="nsew", padx=(0, 10))
-        self.p95_value = tk.Label(
-            box, text="--", bg=bg, fg=CONFIG.ui_text,
-            font=("Microsoft YaHei", 22, "bold"),
-        )
-        self.p95_value.pack(pady=(2, 0))
-        self.p95_status = tk.Label(
-            box, text="P95 混合误差", bg=bg, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9),
-        )
-        self.p95_status.pack()
-        self.meanre_value = tk.Label(
-            box, text="--", bg=bg, fg=CONFIG.ui_text,
-            font=("Microsoft YaHei", 14, "bold"),
-        )
-        self.meanre_value.pack(pady=(10, 0))
-        self.meanre_status = tk.Label(
-            box, text="平均相对误差", bg=bg, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 9),
-        )
-        self.meanre_status.pack()
-
-        card2, box2, bg2 = self._make_card(report, "输入配置摘要")
-        card2.grid(row=0, column=2, sticky="nsew", padx=(0, 10))
-        self.summary_label = tk.Label(
-            box2, text="--", bg=bg2, fg=CONFIG.ui_text, font=("Microsoft YaHei", 9),
-            justify="left", anchor="nw",
-        )
-        self.summary_label.pack(anchor="w", fill="both", expand=True)
-        bind_autowrap(self.summary_label)
-
-        card3, box3, bg3 = self._make_card(report, "模型细节")
-        card3.grid(row=0, column=3, sticky="nsew", padx=(0, 10))
-        self.detail_label = tk.Label(
-            box3, text="--", bg=bg3, fg=CONFIG.ui_text, font=("Microsoft YaHei", 9),
-            justify="left", anchor="nw",
-        )
-        self.detail_label.pack(anchor="w", fill="both", expand=True)
-        bind_autowrap(self.detail_label)
-
-        card4, box4, bg4 = self._make_card(report, "建议")
-        card4.grid(row=0, column=4, sticky="nsew")
-        self.advice_label = tk.Label(
-            box4, text="--", bg=bg4, fg=CONFIG.ui_text, font=("Microsoft YaHei", 9),
-            justify="left", anchor="nw",
-        )
-        self.advice_label.pack(anchor="w", fill="both", expand=True)
-        bind_autowrap(self.advice_label)
-
-    def _selected_result_tab_key(self) -> str:
-        """返回当前选中的结果标签页 key（triple / full / aim）。"""
-        selected = self.result_tabs.select()
-        for key, frame in self.tab_frames.items():
-            if selected == str(frame):
-                return key
-        return "triple"
-
-    def _on_result_tab_changed(self, _event: object = None) -> None:
-        """切换结果标签页时按当前真实尺寸重绘画布，修复隐藏期创建导致的偏移。"""
-        which = self._selected_result_tab_key()
-        canvas = self.canvases.get(which)
-        if canvas is None:
-            return
-        self.root.update_idletasks()
-        widget = canvas.get_tk_widget()
-        width, height = widget.winfo_width(), widget.winfo_height()
-        if width > 1 and height > 1:
-            # 与 FigureCanvasTkAgg.resize 相同的逻辑：把画布尺寸同步给 Figure
-            dpi = canvas.figure.dpi
-            canvas.figure.set_size_inches(width / dpi, height / dpi, forward=False)
-        canvas.draw_idle()
+    # ---------- Status and service state ----------
 
     def _set_status(self, text: str, kind: str = "info") -> None:
-        self.status_var.set(text)
-        if hasattr(self, "status_message"):
-            self.status_message.configure(text=text)
-        colors = {
-            "info": CONFIG.ui_muted,
-            "busy": CONFIG.ui_busy,
-            "ok": CONFIG.ui_success,
-            "error": CONFIG.ui_danger,
-        }
-        states = {"info": "就绪", "busy": "运行中", "ok": "已完成", "error": "出错"}
-        if hasattr(self, "status_dot"):
-            self.status_dot.configure(fg=colors.get(kind, CONFIG.ui_muted))
-        if hasattr(self, "state_label"):
-            self.state_label.configure(
-                text=states.get(kind, "就绪"), fg=colors.get(kind, CONFIG.ui_text)
-            )
-        self._set_animating(kind == "busy")
+        self.status_bar.set_status(text, kind)
         self.root.update_idletasks()
 
-    def _set_animating(self, active: bool) -> None:
-        """运行状态点的呼吸灯效果：busy 时启动，其余状态自动停止。"""
-        if active and not self._busy_animating:
-            self._busy_animating = True
-            self._animate_status_dot()
-        elif not active:
-            self._busy_animating = False
-
-    def _animate_status_dot(self) -> None:
-        if not self._busy_animating:
-            return
-        pulse_colors = ("#e8b45a", CONFIG.ui_busy, "#c98f2f", CONFIG.ui_busy)
-        self._anim_phase = (self._anim_phase + 1) % len(pulse_colors)
-        try:
-            self.status_dot.configure(fg=pulse_colors[self._anim_phase])
-            self.root.after(300, self._animate_status_dot)
-        except tk.TclError:
-            self._busy_animating = False
-
     def _set_progress(self, percent: float, stage: str) -> None:
-        self.progress_var.set(percent)
-        self.progress_percent.configure(text=f"{percent:.0f}%")
-        self.stage_label.configure(text=stage)
+        self.status_bar.set_progress(percent, stage)
 
     def _set_busy(self, busy: bool) -> None:
-        state = "disabled" if busy else "normal"
-        for name in (
-            "train_button", "predict_button", "save_button", "load_button",
-            "optimize_button", "batch_button",
+        active = busy or self.task_manager.is_busy()
+        action_state = "disabled" if active else "normal"
+        for button in (
+            self.model_panel.train_button,
+            self.model_panel.load_button,
+            self.model_panel.save_button,
+            self.prediction_panel.predict_button,
+            self.batch_panel.run_button,
+            self.aim_panel.optimize_button,
+            self.workbench.open_button,
+            self.workbench.save_button,
+            self.workbench.run_button,
         ):
-            button = getattr(self, name, None)
-            if button is not None:
-                button.configure(state=state)
-        cancel_state = "normal" if busy else "disabled"
-        if hasattr(self, "cancel_button"):
-            self.cancel_button.configure(state=cancel_state)
-        if hasattr(self, "cancel_batch_button"):
-            self.cancel_batch_button.configure(state=cancel_state)
+            button.configure(state=action_state)
+        self.model_panel.cancel_button.configure(
+            state="normal" if self._task_is_busy("training") else "disabled"
+        )
+        self.batch_panel.cancel_button.configure(
+            state="normal" if self._task_is_busy("batch") else "disabled"
+        )
+        self.workbench.stop_button.configure(state="normal" if active else "disabled")
+
+    def _task_is_busy(self, kind: str) -> bool:
+        """Check an optional task without assuming it has been submitted."""
+        return self.task_manager.get(kind) is not None and self.task_manager.is_busy(kind)
 
     def _set_data_dir(self, data_dir: str, config: Config | None = None) -> None:
+        from damage_gui.data.loader import DamageDataManager
+
         self.data_dir_var.set(data_dir)
-        self.service = DamageModelService(DamageDataManager(data_dir), config=config)
+        self._data_manager = DamageDataManager(data_dir)
+        self._service_config = config
+        self._runtime_initialized = True
+        self.service = None
+        self.training_service = None
+        self.prediction_service = None
+        self.batch_service = None
+        if hasattr(self, "dataset_panel"):
+            self.dataset_panel.refresh(data_dir, self.level_var.get())
+
+    def _initialize_runtime_context(self) -> None:
+        """Initialize data context after the initial desktop paint."""
+        if not self._runtime_initialized:
+            self._set_data_dir(self.data_dir_var.get())
+
+    def _ensure_runtime_context(self) -> None:
+        """Preserve synchronous behavior for programmatic early callbacks."""
+        if not self._runtime_initialized:
+            self._initialize_runtime_context()
+
+    def _ensure_model_service(self) -> DamageModelService:
+        self._ensure_runtime_context()
+        assert self._data_manager is not None
+        if self.service is None:
+            from damage_gui.model.bundle import DamageModelService
+
+            self.service = DamageModelService(self._data_manager, config=self._service_config)
+        return self.service
+
+    def _ensure_training_service(self) -> TrainingService:
+        service = self._ensure_model_service()
+        if self.training_service is None:
+            from damage_gui.services.training_service import TrainingService
+
+            self.training_service = TrainingService(service, db_path=self._db_path)
+        return self.training_service
+
+    def _ensure_prediction_service(self) -> PredictionService:
+        self._ensure_runtime_context()
+        assert self._data_manager is not None
+        if self.prediction_service is None:
+            from damage_gui.services.prediction_service import PredictionService
+
+            self.prediction_service = PredictionService(
+                self._data_manager,
+                model_service=self.service,
+                config=self._service_config,
+            )
+        return self.prediction_service
+
+    def _ensure_batch_service(self) -> BatchService:
+        self._ensure_runtime_context()
+        assert self._data_manager is not None
+        if self.batch_service is None:
+            from damage_gui.services.batch_service import BatchService
+
+            self.batch_service = BatchService(self._data_manager, config=self._service_config)
+        return self.batch_service
 
     def _active_config(self) -> Config:
-        """当前模型的训练配置；无模型时回退到服务或应用默认配置。"""
         if self.bundle is not None:
             return self.bundle.resolved_config()
         if self.service is not None:
             return self.service.config
+        if self._service_config is not None:
+            return self._service_config
         return CONFIG
+
+    def _clear_prediction_state(self) -> None:
+        """Remove prediction-dependent UI state before a new result is shown."""
+        self.current_prediction = None
+        self.current_truth = None
+        self.current_condition = None
+        self.current_figure = None
+        self.current_aim_result = None
+        self.current_value_field = None
+        self.last_ood_report = None
+        self._last_predict_time = None
+        for key in ("triple", "full", "aim"):
+            self.visualization.clear(key)
+        self.visualization.set_view("triple")
+        self.visualization.set_context("Damage Field", "No prediction yet.")
+        self.results.reset()
+        self.prediction_panel.set_reliability("No prediction yet.")
+        self.aim_panel.set_summary("No optimization yet.")
+
+    # ---------- Input mapping ----------
 
     def _current_condition(self) -> Condition:
         try:
@@ -940,12 +420,18 @@ class DamagePredictionGUI:
             }
         except ValueError as exc:
             raise ValueError("h、v、deg 必须是数字") from exc
-
-        for name, value in values.items():
-            lo, hi, _step = self.CONDITION_LIMITS[name]
-            if not (lo <= value <= hi):
-                raise ValueError(f"{name} 超出合法范围 [{lo:g}, {hi:g}]，当前为 {value:g}")
-        return Condition(**values)
+        try:
+            return validate_condition(**values)
+        except DataValidationError as exc:
+            field = getattr(exc, "condition_field", None)
+            value = getattr(exc, "condition_value", None)
+            lower = getattr(exc, "condition_lower", None)
+            upper = getattr(exc, "condition_upper", None)
+            if field is not None:
+                raise ValueError(
+                    f"{field} 超出合法范围 [{lower:g}, {upper:g}]，当前为 {value:g}"
+                ) from exc
+            raise
 
     def _selected_model_type(self) -> str:
         return choice_value(MODEL_TYPE_CHOICES, self.model_type_var.get(), "rbf")
@@ -953,151 +439,123 @@ class DamagePredictionGUI:
     def _selected_validation_mode(self) -> str:
         return choice_value(VALIDATION_CHOICES, self.validation_var.get(), "random")
 
-    def _draw_figure(self, figure: Figure, which: str = "triple") -> None:
-        self.figures[which] = figure
-        self.current_figure = figure
-        frame = self.tab_frames[which]
-        old_canvas = self.canvases.get(which)
-        if old_canvas is not None:
-            old_canvas.get_tk_widget().destroy()
-        for child in frame.winfo_children():
-            if isinstance(child, tk.Label):
-                child.destroy()
-        canvas = FigureCanvasTkAgg(figure, master=frame)
-        widget = canvas.get_tk_widget()
-        widget.configure(bg=CONFIG.ui_bg, highlightthickness=0, bd=0)
-        widget.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
-        canvas.draw()
-        self.canvases[which] = canvas
+    # ---------- Results and model context ----------
 
-    # ---------- 报告卡片更新 ----------
+    def _update_key_metrics(self, mean_re: float | None, p95_hybrid: float | None) -> None:
+        import pandas as pd
 
-    def _update_key_metrics(
-        self, mean_re: float | None, p95_hybrid: float | None
-    ) -> None:
-        target = self._active_config().relative_error_target
-        value, value_color, status, status_color = metric_display(
-            p95_hybrid, "P95 混合误差", target
+        self.results.set_value(
+            "mean_error", None if mean_re is None or pd.isna(mean_re) else f"{mean_re:.2%}"
         )
-        self.p95_value.configure(text=value, fg=value_color)
-        self.p95_status.configure(text=status, fg=status_color)
-        value, value_color, status, status_color = metric_display(
-            mean_re, "平均相对误差", target
+        self.results.set_value(
+            "p95_error",
+            None if p95_hybrid is None or pd.isna(p95_hybrid) else f"{p95_hybrid:.2%}",
         )
-        self.meanre_value.configure(text=value, fg=value_color)
-        self.meanre_status.configure(text=status, fg=status_color)
-
-    @staticmethod
-    def _short_path(path: str, limit: int = 36) -> str:
-        return path if len(path) <= limit else "…" + path[-(limit - 1):]
-
-    def _update_summary_card(self, condition: Condition | None) -> None:
-        lines = [
-            f"数据路径: {self._short_path(self.data_dir_var.get())}",
-            f"毁伤等级: {self.level_var.get()}",
-            f"模型类型: {self.model_type_var.get()}",
-            f"验证方式: {self.validation_var.get()}",
-        ]
-        if condition is not None:
-            lines.append(
-                f"工况: h={condition.h:g} m, v={condition.v:g} m/s, deg={condition.deg:g}°"
-            )
+        if mean_re is None or p95_hybrid is None:
+            self.validation_panel.set_result("No validation metrics available.")
         else:
-            lines.append("工况: 尚未预测")
-        self.summary_label.configure(text="\n".join(lines))
+            target = self._active_config().relative_error_target
+            self.validation_panel.set_result(
+                f"Mean relative error: {mean_re:.2%}\n"
+                f"P95 hybrid error: {p95_hybrid:.2%}\n"
+                f"Target: < {target:.0%}"
+            )
 
-    def _update_detail_card(self) -> None:
+    def _update_model_status(self) -> None:
         if self.bundle is None:
-            self.detail_label.configure(text="尚未训练或加载模型。")
+            self.model_panel.set_model_status("No model loaded.")
             return
         bundle = self.bundle
-        config = bundle.resolved_config()
         model = bundle.model
         lines = [
-            f"模型: {getattr(model, 'model_name', type(model).__name__)}",
-            f"训练集: {len(bundle.train_conditions)} 工况",
-            f"测试集: {len(bundle.test_conditions)} 工况",
+            f"{getattr(model, 'model_name', type(model).__name__)}",
+            f"Level {bundle.level} · {len(bundle.train_conditions)} train / "
+            f"{len(bundle.test_conditions)} test",
         ]
-        if getattr(model, "explained_variance", 0.0):
-            lines.append(
-                f"POD 累计解释方差: {model.explained_variance:.2%} (K={model.n_components_used})"
-            )
         lines.append(
-            f"验证方式: "
-            f"{VALIDATION_LABELS.get(bundle.validation_mode, bundle.validation_mode)}"
-        )
-        lines.append(f"RBF 核: {config.rbf_kernel}")
-        lines.append(f"质心对齐: {'开启' if config.align_patterns else '关闭'}")
-        lines.append(f"降噪: 双边滤波 σs={config.denoise_sigma_spatial:g}")
-        lines.append(
-            f"评估口径: Raw + Smoothed (σ={config.eval_smoothing_sigma:g}) 双口径"
+            f"Validation: {VALIDATION_LABELS.get(bundle.validation_mode, bundle.validation_mode)}"
         )
         metadata = getattr(bundle, "metadata", None)
         if metadata is not None:
-            lines.append(f"模型 ID: {metadata.model_id[:8]}")
-            lines.append(
-                f"版本: 软件 {metadata.app_version} | 元数据 schema "
-                f"{metadata.schema_version} | 模型格式 {metadata.model_format_version}"
-            )
-            lines.append(f"训练数据指纹: {metadata.training_data_hash[:19]}…")
-            if metadata.code_commit:
-                lines.append(f"训练时 commit: {metadata.code_commit}")
+            lines.append(f"ID: {metadata.model_id[:8]}")
         else:
-            lines.append("元数据: 旧版模型（无追溯信息）")
+            lines.append("Legacy model without metadata")
         if self._last_train_time is not None:
-            lines.append(f"训练耗时: {self._last_train_time:.1f} s")
-        if self._last_predict_time is not None:
-            lines.append(f"预测耗时: {self._last_predict_time * 1000:.0f} ms")
-        if self.last_ood_report is not None:
-            report = self.last_ood_report
-            lines.append(
-                f"模型可信度: {report.level_label} (最近工况距离 {report.distance:.3f})"
+            lines.append(f"Training: {self._last_train_time:.1f} s")
+        self.model_panel.set_model_status("\n".join(lines))
+
+    def _update_results_prediction(self, result: PredictionResult) -> None:
+        self.results.set_value("maximum", f"{result.peak_intensity:.4f}")
+        self.results.set_value("area", f"{result.damage_area_ratio:.2%}")
+        self.results.set_value(
+            "grid", f"{result.prediction.shape[1]}×{result.prediction.shape[0]}"
+        )
+        metrics = result.truth_comparison_metrics
+        mean_re = float(metrics["MeanRelativeError"]) if metrics else None
+        p95_hybrid = float(metrics["P95HybridError"]) if metrics else None
+        self._update_key_metrics(mean_re, p95_hybrid)
+
+        report = result.ood_report
+        if report is None:
+            for key in ("confidence", "ood_distance", "inside_hull", "local_support"):
+                self.results.set_value(key, None)
+            self.prediction_panel.set_reliability("No OOD report available.")
+        else:
+            self.results.set_value("confidence", report.level_label)
+            self.results.set_value("ood_distance", f"{report.distance:.3f}")
+            inside_hull = (
+                "Yes" if report.in_hull is True
+                else "No" if report.in_hull is False else None
             )
+            self.results.set_value("inside_hull", inside_hull)
+            local_support = getattr(report, "local_support", None)
+            self.results.set_value(
+                "local_support",
+                "Yes" if local_support is True else "No" if local_support is False else None,
+            )
+            reliability = [f"{report.level_label} · distance {report.distance:.3f}"]
             if report.in_hull is False:
-                lines.append("几何判定: 训练工况全局凸包外")
-            elif getattr(report, "local_support", None) is False:
-                lines.append("几何判定: 全局凸包内，但局部训练支撑不足")
-        self.detail_label.configure(text="\n".join(lines))
+                reliability.append("Outside the training hull")
+            elif local_support is False:
+                reliability.append("Local training support is sparse")
+            self.prediction_panel.set_reliability("\n".join(reliability))
+
+        self.results.set_value("elapsed", f"{result.elapsed_ms} ms")
+        model_name = "—"
+        if self.bundle is not None:
+            model_name = getattr(self.bundle.model, "model_name", type(self.bundle.model).__name__)
+        self.results.set_value("model", model_name)
 
     def _update_advice_card(
         self, mean_re: float | None, p95_hybrid: float | None, scope: str
     ) -> None:
+        import pandas as pd
+
         target = self._active_config().relative_error_target
         if mean_re is None or pd.isna(mean_re):
-            text = "训练或预测完成后，此处将给出结论与建议。"
+            text = "训练或预测完成后显示结论。"
         elif mean_re < target and p95_hybrid is not None and p95_hybrid < target:
-            text = (
-                f"{scope}核心指标全部达标（目标 <{target:.0%}）。"
-                "预测模型符合精度要求，可以用于后续毁伤效能评估，建议导出结果文件存档。"
-            )
+            text = f"{scope}核心指标全部达标（目标 <{target:.0%}）。可导出结果存档。"
         elif mean_re < target:
-            text = (
-                f"{scope}平均精度达标，但 P95 混合误差超标，说明存在局部误差偏大的区域。"
-                "建议切换到误差图定位偏差位置，或在该工况附近加密仿真数据后重新训练。"
-            )
+            text = f"{scope}平均精度达标，但 P95 混合误差超标。建议定位误差并加密附近工况。"
         else:
-            text = (
-                f"{scope}核心指标未达标。建议确认数据目录完整、"
-                "加密训练工况网格（尤其大角度/低速角落区域）后重新训练。"
-            )
-        self.advice_label.configure(text=text)
+            text = f"{scope}核心指标未达标。建议确认数据完整并加密训练工况网格。"
+        self.results.set_advice(text)
+
+    # ---------- Dataset / model lifecycle ----------
 
     def on_browse_data(self) -> None:
         selected = filedialog.askdirectory(
-            title="选择 data 文件夹",
-            initialdir=self.data_dir_var.get(),
+            title="选择 data 文件夹", initialdir=self.data_dir_var.get()
         )
         if not selected:
             return
         self._set_data_dir(selected)
         self._set_status(f"已选择数据目录: {selected}")
 
-    # ---------- 训练（后台任务） ----------
-
     def on_train(self) -> None:
         try:
-            if self.service is None:
-                raise RuntimeError("数据服务未初始化")
+            training_service = self._ensure_training_service()
             level = self.level_var.get().strip().upper()
             model_type = self._selected_model_type()
             validation_mode = self._selected_validation_mode()
@@ -1108,10 +566,8 @@ class DamagePredictionGUI:
             if pod_components < 2:
                 raise ValueError("POD 主成分数至少为 2")
 
-            service = self.service
-
-            def work(ctx) -> ModelBundle:
-                return service.train_bundle(
+            def work(ctx) -> TrainingResult:
+                return training_service.train(
                     level,
                     validation_mode=validation_mode,
                     model_type=model_type,
@@ -1124,7 +580,7 @@ class DamagePredictionGUI:
             self._set_busy(True)
             self._set_status(
                 f"正在后台训练等级 {level} 模型（{self.model_type_var.get()}，"
-                f"{self.validation_var.get()}），界面仍可操作，请稍候...",
+                f"{self.validation_var.get()}），请稍候…",
                 kind="busy",
             )
             self._poll_tasks()
@@ -1136,27 +592,23 @@ class DamagePredictionGUI:
 
     def on_cancel_training(self) -> None:
         if self.task_manager.cancel("training"):
-            self._set_status("正在取消训练...", kind="busy")
+            self._set_status("正在取消训练…", kind="busy")
 
     def _poll_tasks(self) -> None:
-        """主线程轮询任务事件：进度 / 完成 / 失败 / 取消（训练与批量预测）。"""
         for event in self.task_manager.poll():
             if event.type == "progress":
-                percent = (
-                    event.done / event.total * 100.0 if event.total > 0 else 0.0
-                )
+                percent = event.done / event.total * 100.0 if event.total > 0 else 0.0
                 self._set_progress(percent, event.stage)
             elif event.type == "finished":
                 if event.kind == "training":
                     self._on_training_finished(event)
                 elif event.kind == "batch":
                     self._on_batch_finished(event)
-
         if self.task_manager.is_busy():
             self.root.after(80, self._poll_tasks)
         else:
             self._set_busy(False)
-            self._set_progress(0.0, "等待任务...")
+            self._set_progress(0.0, "")
 
     def _on_training_finished(self, event: TaskEvent) -> None:
         if event.status == TaskStatus.SUCCESS:
@@ -1166,80 +618,46 @@ class DamagePredictionGUI:
         else:
             self._show_error("训练失败", event.error_summary or "未知错误")
 
-    def _record_training_to_db(self, bundle: ModelBundle) -> bool:
-        """训练结果写入 SQLite 追溯库；失败返回 False（已记录 ERROR 日志）。"""
-        if bundle.metadata is None:
-            return False
-        mean_re, p95_hybrid = extract_core_metrics(
-            bundle.accuracy_report, bundle.resolved_config()
-        )
-        details: dict = {
-            "validation_mode": bundle.validation_mode,
-            "train_time_seconds": round(bundle.train_time_seconds, 3),
-        }
-        if mean_re is not None:
-            details["mean_relative_error"] = float(mean_re)
-        if p95_hybrid is not None:
-            details["p95_hybrid_error"] = float(p95_hybrid)
-        job_id = JobRepository(self._db_path).record_training_run(
-            bundle.metadata,
-            input_source=bundle.data_dir,
-            duration_ms=int(bundle.train_time_seconds * 1000),
-            details=details,
-        )
-        return job_id is not None
-
-    def _finish_training(self, bundle: ModelBundle) -> None:
+    def _finish_training(self, result: TrainingResult) -> None:
+        bundle = result.bundle
         self.bundle = bundle
         self._last_train_time = bundle.train_time_seconds
-        self.last_ood_report = None
+        self._clear_prediction_state()
         self._set_progress(100.0, "训练与评估完成")
-
-        accuracy_path = app_base_dir() / f"gui_accuracy_report_{bundle.level}.csv"
-        condition_path = app_base_dir() / f"gui_condition_report_{bundle.level}.csv"
-        bundle.accuracy_report.to_csv(accuracy_path, index=False, encoding="utf-8-sig")
-        bundle.condition_report.to_csv(condition_path, index=False, encoding="utf-8-sig")
-
-        mean_re, p95_hybrid = extract_core_metrics(
-            bundle.accuracy_report, bundle.resolved_config()
-        )
-        core_summary = ""
-        if mean_re is not None:
-            core_summary = (
-                f"核心指标: 平均相对误差 {mean_re:.2%}, "
-                f"P95混合误差 {p95_hybrid:.2%} "
-                f"(目标 <{bundle.resolved_config().relative_error_target:.0%})。"
-            )
-        self._update_key_metrics(mean_re, p95_hybrid)
-        self._update_summary_card(self.current_condition)
-        self._update_detail_card()
-        self._update_advice_card(mean_re, p95_hybrid, "测试集")
-
-        db_note = ""
-        if not self._record_training_to_db(bundle):
-            db_note = "（警告：训练结果未写入 SQLite 追溯数据库，详见日志）"
-
+        self._update_key_metrics(result.mean_relative_error, result.p95_hybrid_error)
+        self._update_model_status()
+        self._update_advice_card(result.mean_relative_error, result.p95_hybrid_error, "测试集")
         validation_note = ""
         if bundle.validation_mode != "random":
+            validation_label = VALIDATION_LABELS.get(
+                bundle.validation_mode, bundle.validation_mode
+            )
             validation_note = (
-                f" 验证方式: "
-                f"{VALIDATION_LABELS.get(bundle.validation_mode, bundle.validation_mode)}，"
-                "指标来自未见工况的折外预测。"
+                f" 验证方式: {validation_label}，指标来自未见工况的折外预测。"
+            )
+        db_note = "" if result.db_recorded else "（警告：训练结果未写入 SQLite 追溯数据库）"
+        core_summary = ""
+        if result.mean_relative_error is not None:
+            core_summary = (
+                f"核心指标: 平均相对误差 {result.mean_relative_error:.2%}, "
+                f"P95混合误差 {result.p95_hybrid_error:.2%}。"
             )
         self._set_status(
             f"训练完成: {bundle.level}（{getattr(bundle.model, 'model_name', 'RBF')}，"
-            f"耗时 {bundle.train_time_seconds:.1f} s）。{core_summary}{validation_note}"
-            f"评估结果已保存为 {accuracy_path.name} 和 {condition_path.name}{db_note}",
+            f"耗时 {bundle.train_time_seconds:.1f} s）。{core_summary}{validation_note} "
+            f"评估结果已保存为 {result.accuracy_report_path.name} 和 "
+            f"{result.condition_report_path.name}{db_note}",
             kind="ok" if not db_note else "info",
         )
 
     def on_save_model(self) -> None:
         try:
+            from damage_gui.model.registry import save_model
+
             if self.bundle is None:
                 raise RuntimeError("请先训练或加载模型")
             output_path = filedialog.asksaveasfilename(
-                title="保存模型",
-                defaultextension=".joblib",
+                title="保存模型", defaultextension=".joblib",
                 filetypes=[("Joblib Model", "*.joblib")],
                 initialfile=f"damage_model_{self.bundle.level}.joblib",
             )
@@ -1256,26 +674,26 @@ class DamagePredictionGUI:
 
     def on_load_model(self) -> None:
         try:
+            from damage_gui.evaluation.metrics import extract_core_metrics
+            from damage_gui.model.registry import load_model
+
             model_path = filedialog.askopenfilename(
-                title="加载模型",
-                filetypes=[("Joblib Model", "*.joblib")],
+                title="加载模型", filetypes=[("Joblib Model", "*.joblib")]
             )
             if not model_path:
                 return
-            bundle = load_model(model_path)  # 损坏/不兼容时抛 ModelLoadError
+            bundle = load_model(model_path)
             self.bundle = bundle
+            self._clear_prediction_state()
             self.level_var.set(bundle.level)
             self._last_train_time = getattr(bundle, "train_time_seconds", None) or None
-            self.last_ood_report = None
             if bundle.data_dir:
                 self._set_data_dir(bundle.data_dir, bundle.resolved_config())
-
             mean_re, p95_hybrid = extract_core_metrics(
                 bundle.accuracy_report, bundle.resolved_config()
             )
             self._update_key_metrics(mean_re, p95_hybrid)
-            self._update_summary_card(self.current_condition)
-            self._update_detail_card()
+            self._update_model_status()
             self._update_advice_card(mean_re, p95_hybrid, "测试集")
             legacy_note = (
                 "" if getattr(bundle, "metadata", None) is not None
@@ -1285,30 +703,33 @@ class DamagePredictionGUI:
         except Exception as exc:
             self._handle_error("加载模型失败", exc)
 
-    # ---------- 批量预测（后台任务） ----------
+    # ---------- Batch prediction ----------
 
     def on_browse_batch_csv(self) -> None:
         selected = filedialog.askopenfilename(
-            title="选择批量预测输入 CSV",
-            filetypes=[("CSV File", "*.csv")],
+            title="选择批量预测输入 CSV", filetypes=[("CSV File", "*.csv")]
         )
         if selected:
             self.batch_csv_var.set(selected)
+            self.batch_panel.set_selected_path(selected)
 
     def on_run_batch(self) -> None:
         try:
             if self.bundle is None:
                 raise RuntimeError("请先训练或加载模型")
+            batch_service = self._ensure_batch_service()
             csv_path = self.batch_csv_var.get().strip()
             if not csv_path:
                 raise DataValidationError("请先选择批量预测输入 CSV 文件")
-            parsed = parse_batch_csv(csv_path, default_level=self.bundle.level)
+            parsed = batch_service.parse_csv(csv_path, default_level=self.bundle.level)
+            self.batch_panel.set_info(
+                f"Rows detected: {parsed.total}\n"
+                f"Valid: {len(parsed.rows)} · Invalid: {len(parsed.invalid)}"
+            )
             if not parsed.rows:
                 raise DataValidationError("输入 CSV 中没有可预测的合法行")
-
             output_path = filedialog.asksaveasfilename(
-                title="保存批量预测结果",
-                defaultextension=".csv",
+                title="保存批量预测结果", defaultextension=".csv",
                 filetypes=[("CSV File", "*.csv")],
                 initialfile=Path(csv_path).stem + "_result.csv",
             )
@@ -1316,21 +737,14 @@ class DamagePredictionGUI:
                 return
 
             bundle = self.bundle
-            service = self.service
-            data_manager = service.data_manager if service is not None else None
-            db_path = self._db_path
+            data_manager = self._data_manager
+            batch_service = self._ensure_batch_service()
 
             def work(ctx) -> BatchReport:
-                return run_batch(
-                    bundle,
-                    parsed.rows,
-                    invalid_rows=parsed.invalid,
-                    data_manager=data_manager,
-                    output_path=output_path,
-                    db_path=db_path,
-                    input_source=Path(csv_path).name,
-                    progress=ctx.report_progress,
-                    cancel_check=ctx.cancel_check,
+                return batch_service.run(
+                    bundle, parsed, data_manager=data_manager, output_path=output_path,
+                    db_path=self._db_path, input_source=Path(csv_path).name,
+                    progress=ctx.report_progress, cancel_check=ctx.cancel_check,
                 )
 
             self.task_manager.submit("batch", work)
@@ -1340,7 +754,7 @@ class DamagePredictionGUI:
                 if parsed.invalid else ""
             )
             self._set_status(
-                f"正在后台批量预测 {parsed.total} 个工况{invalid_note}，请稍候...",
+                f"正在后台批量预测 {parsed.total} 个工况{invalid_note}，请稍候…",
                 kind="busy",
             )
             self._poll_tasks()
@@ -1355,172 +769,112 @@ class DamagePredictionGUI:
     def _on_batch_finished(self, event: TaskEvent) -> None:
         if event.status == TaskStatus.SUCCESS:
             report: BatchReport = event.result
-            db_note = (
-                "" if report.db_recorded
-                else "（警告：结果未写入 SQLite 追溯数据库，详见日志）"
-            )
-            output_name = (
-                Path(report.output_path).name if report.output_path else "-"
-            )
+            output_name = Path(report.output_path).name if report.output_path else "-"
+            db_note = "" if report.db_recorded else "（警告：结果未写入 SQLite 追溯数据库）"
             self._set_status(
-                f"批量预测完成: 成功 {report.success_count}/{report.total}，"
-                f"失败 {report.failed_count}，耗时 {report.duration_ms} ms。"
-                f"结果已保存为 {output_name}{db_note}",
+                f"批量预测完成: 成功 {report.success_count}/{report.total}，失败 "
+                f"{report.failed_count}，耗时 {report.duration_ms} ms。结果已保存为 "
+                f"{output_name}{db_note}",
                 kind="ok" if report.failed_count == 0 else "info",
             )
         elif event.status == TaskStatus.CANCELLED:
+            from damage_gui.services.batch_service import BatchReport
+
             report = event.result
             if isinstance(report, BatchReport):
                 self._set_status(
                     f"批量预测已取消: 已完成 {len(report.rows)}/{report.total} 行，"
-                    "已完成部分保留在输出中。",
-                    kind="info",
+                    "已完成部分保留在输出中。"
                 )
             else:
-                self._set_status("批量预测已取消。", kind="info")
+                self._set_status("批量预测已取消。")
         else:
             self._show_error("批量预测失败", event.error_summary or "未知错误")
 
-    # ---------- 预测 ----------
+    # ---------- Prediction and export ----------
 
     def on_predict(self) -> None:
         try:
             if self.bundle is None:
                 raise RuntimeError("请先训练或加载模型")
-            if self.service is None:
-                raise RuntimeError("数据服务未初始化")
-
+            prediction_service = self._ensure_prediction_service()
+            self._clear_prediction_state()
             condition = self._current_condition()
             config = self._active_config()
             self.current_condition = condition
-            self._set_status("正在预测并生成热力图...", kind="busy")
-            started = time.perf_counter()
-            self.current_prediction = self.service.predict_matrix(self.bundle, condition)
-            self._last_predict_time = time.perf_counter() - started
-            self.current_truth = None
-
-            # OOD / 预测可信度检测
-            detector = getattr(self.bundle, "ood_detector", None)
-            self.last_ood_report = (
-                detector.report(condition) if detector is not None and detector.is_fitted else None
-            )
-
-            # 新预测后清空旧瞄准优化结果
+            self._set_status("正在预测并生成热力图…", kind="busy")
+            result = prediction_service.predict(self.bundle, condition, config=config)
+            self.current_prediction = result.prediction
+            self._last_predict_time = result.elapsed_seconds
+            self.current_truth = result.truth
+            self.last_ood_report = result.ood_report
             self.current_aim_result = None
             self.current_value_field = None
             self._clear_aim_view()
 
-            record = None
-            try:
-                record = self.service.data_manager.find_record(self.bundle.level, condition)
-            except Exception:
-                record = None
-
-            if record is not None:
-                self.current_truth = read_damage_matrix(record.path, config)
+            from damage_gui.visualization.plots import render_full_prediction, render_heatmaps
 
             triple_figure = render_heatmaps(
-                self.current_truth,
-                self.current_prediction,
-                display_threshold=config.display_threshold,
-                config=config,
+                result.truth, result.prediction,
+                display_threshold=config.display_threshold, config=config,
             )
-            self._draw_figure(triple_figure, which="triple")
-            self._draw_figure(
-                render_full_prediction(self.current_prediction, config), which="full"
+            full_figure = render_full_prediction(result.prediction, config)
+            self.visualization.set_figure(triple_figure, "triple")
+            self.visualization.set_figure(full_figure, "full")
+            selected_view = "triple" if result.truth is not None else "full"
+            self.visualization.set_view(selected_view)
+            self.current_figure = self.visualization.figures[selected_view]
+            self._sync_visualization_context()
+            self._update_results_prediction(result)
+            self._update_advice_card(
+                float(result.truth_comparison_metrics["MeanRelativeError"])
+                if result.truth_comparison_metrics else None,
+                float(result.truth_comparison_metrics["P95HybridError"])
+                if result.truth_comparison_metrics else None,
+                "当前工况",
             )
-            self.result_tabs.select(
-                self.tab_frames["triple" if self.current_truth is not None else "full"]
-            )
-            self.current_figure = triple_figure
-
-            self._update_summary_card(condition)
-            self._update_detail_card()
-
             ood_note = ""
-            if self.last_ood_report is not None:
-                report = self.last_ood_report
-                ood_note = f" 模型可信度: {report.level_label} (d={report.distance:.3f})。"
-                if report.in_hull is False:
+            if result.ood_report is not None:
+                ood_note = (
+                    f" 模型可信度: {result.ood_report.level_label} "
+                    f"(d={result.ood_report.distance:.3f})。"
+                )
+                if result.ood_report.in_hull is False:
                     ood_note += " 当前工况位于训练凸包外。"
-                elif getattr(report, "local_support", None) is False:
+                elif getattr(result.ood_report, "local_support", None) is False:
                     ood_note += " 当前工况位于局部数据空洞。"
-
-            if self.current_truth is not None:
-                eval_true, eval_pred = evaluation_fields(
-                    self.current_truth, self.current_prediction, config
-                )
-                focus_mask = eval_true.ravel() > config.relative_error_threshold
-                if np.any(focus_mask):
-                    focus_metrics = metric_row(
-                        f"damage_gt_{config.relative_error_threshold:.2f}",
-                        eval_true.ravel()[focus_mask],
-                        eval_pred.ravel()[focus_mask],
-                        config.relative_error_threshold,
-                        config,
-                    )
-                    mean_re = float(focus_metrics["MeanRelativeError"])
-                    p95_hybrid = float(focus_metrics["P95HybridError"])
-                    self._update_key_metrics(mean_re, p95_hybrid)
-                    self._update_advice_card(mean_re, p95_hybrid, "当前工况")
-                else:
-                    self._update_advice_card(None, None, "")
-                    self.advice_label.configure(
-                        text="当前工况无 damage>0.05 的毁伤区，相对误差指标不适用。"
-                    )
-                self._set_status(
-                    f"预测完成（耗时 {self._last_predict_time * 1000:.0f} ms），"
-                    "并已匹配到真实矩阵，当前显示对比三联图。" + ood_note,
-                    kind=(
-                        "ok"
-                        if self.last_ood_report is None
-                        or not self.last_ood_report.is_extrapolation
-                        else "info"
-                    ),
-                )
-            else:
-                self.advice_label.configure(
-                    text="当前工况在 data 中没有真实矩阵，展示全视图预测结果。"
-                    "精度可参考关键指标卡片中训练时的测试集指标。"
-                )
-                self._set_status(
-                    f"预测完成（耗时 {self._last_predict_time * 1000:.0f} ms），"
-                    "当前工况没有真实矩阵，显示全视图预测热力图。" + ood_note,
-                    kind=(
-                        "ok"
-                        if self.last_ood_report is None
-                        or not self.last_ood_report.is_extrapolation
-                        else "info"
-                    ),
-                )
-
-            # 距离低可信、凸包外或局部空洞均给出显著提示
-            if (
-                self.last_ood_report is not None
-                and self.last_ood_report.is_extrapolation
-            ):
-                geometry_reason = "训练数据覆盖边缘"
-                if self.last_ood_report.in_hull is False:
-                    geometry_reason = "训练工况全局凸包之外"
-                elif getattr(self.last_ood_report, "local_support", None) is False:
-                    geometry_reason = "全局凸包内的局部数据空洞"
-                self.advice_label.configure(
-                    text=(
-                        f"⚠ 当前工况位于{geometry_reason}（最近训练工况距离 "
-                        f"{self.last_ood_report.distance:.3f}），该预测可能存在较大的外推误差，"
-                        "建议在该区域补充仿真数据后重新训练。"
-                    )
+            status_note = (
+                "并已匹配到真实矩阵，当前显示对比三联图。"
+                if result.truth is not None
+                else "当前工况没有真实矩阵，显示全视图预测热力图。"
+            )
+            self._set_status(
+                f"预测完成（耗时 {result.elapsed_ms} ms），{status_note}{ood_note}",
+                kind=(
+                    "info" if result.ood_report is not None
+                    and result.ood_report.is_extrapolation else "ok"
+                ),
+            )
+            if result.ood_report is not None and result.ood_report.is_extrapolation:
+                reason = result.advice.ood_geometry_reason or "训练数据覆盖边缘"
+                self.results.set_advice(
+                    f"⚠ 当前工况位于{reason}（最近训练工况距离 "
+                    f"{result.ood_report.distance:.3f}），建议在该区域补充仿真数据后重新训练。"
                 )
         except Exception as exc:
             self._handle_error("预测失败", exc)
 
+    def _selected_result_figure(self) -> Figure | None:
+        return self.visualization.current_figure or self.current_figure
+
     def on_export_csv(self) -> None:
         try:
+            from damage_gui.services.export_service import export_matrix_csv
+
             if self.current_prediction is None or self.current_condition is None:
                 raise RuntimeError("请先生成预测结果")
             output_path = filedialog.asksaveasfilename(
-                title="导出预测矩阵 CSV",
-                defaultextension=".csv",
+                title="导出预测矩阵 CSV", defaultextension=".csv",
                 filetypes=[("CSV File", "*.csv")],
                 initialfile=(
                     f"predicted_{self.bundle.level if self.bundle else 'X'}"
@@ -1531,116 +885,78 @@ class DamagePredictionGUI:
             )
             if not output_path:
                 return
-
-            x_axis, y_axis = coordinate_axes(
-                self.current_prediction.shape, self._active_config()
-            )
-            frame = pd.DataFrame(self.current_prediction, index=y_axis, columns=x_axis)
-            frame.index.name = "y"
-            frame.to_csv(output_path, encoding="utf-8-sig")
+            export_matrix_csv(self.current_prediction, output_path, self._active_config())
             self._set_status(f"预测矩阵已导出: {output_path}", kind="ok")
         except Exception as exc:
             self._handle_error("导出 CSV 失败", exc)
 
     def on_export_png(self) -> None:
         try:
-            which = self._selected_result_tab_key()
-            figure = self.figures.get(which) or self.current_figure
+            from damage_gui.services.export_service import export_figure_png
+
+            figure = self._selected_result_figure()
             if figure is None:
                 raise RuntimeError("请先生成热力图")
-            self.current_figure = figure
             output_path = filedialog.asksaveasfilename(
-                title="导出热力图 PNG",
-                defaultextension=".png",
-                filetypes=[("PNG Image", "*.png")],
-                initialfile="damage_heatmap.png",
+                title="导出热力图 PNG", defaultextension=".png",
+                filetypes=[("PNG Image", "*.png")], initialfile="damage_heatmap.png",
             )
             if not output_path:
                 return
-            self.current_figure.savefig(
-                output_path,
-                dpi=self._active_config().export_dpi,
-                bbox_inches="tight",
-            )
+            export_figure_png(figure, output_path, dpi=self._active_config().export_dpi)
             self._set_status(f"热力图已导出: {output_path}", kind="ok")
         except Exception as exc:
             self._handle_error("导出 PNG 失败", exc)
 
-    # ---------- 瞄准优化 ----------
+    # ---------- Aim optimization ----------
 
     def _clear_aim_view(self) -> None:
-        """清空瞄准优化标签页内容。"""
-        frame = self.tab_frames.get("aim")
-        if frame is None:
-            return
-        old_canvas = self.canvases.get("aim")
-        if old_canvas is not None:
-            old_canvas.get_tk_widget().destroy()
-            self.canvases["aim"] = None
-        for child in frame.winfo_children():
-            child.destroy()
-        self.figures["aim"] = None
-        tk.Label(
-            frame, text="预测完成后，输入散布参数并点击「计算最佳瞄准点」",
-            bg=CONFIG.ui_bg, fg=CONFIG.ui_muted,
-            font=("Microsoft YaHei", 10),
-        ).grid(row=0, column=0)
+        self.visualization.clear("aim")
+        self.aim_panel.set_summary("No optimization yet.")
 
     def on_optimize_aim(self) -> None:
-        """计算最佳瞄准点。"""
         try:
+            from damage_gui.data.preprocessing import coordinate_axes
+            from damage_gui.services.aim_service import AimService
+            from damage_gui.visualization.plots import render_aim_optimization
+
             if self.current_prediction is None:
                 raise RuntimeError("请先执行毁伤场预测")
-
+            if self.aim_service is None:
+                self.aim_service = AimService()
             x_axis, y_axis = coordinate_axes(
                 self.current_prediction.shape, self._active_config()
             )
-
             mode = self.spread_mode_var.get()
-            if mode == "CEP":
-                cep_val = float(self.cep_var.get())
-                if cep_val < 0:
-                    raise ValueError("CEP 必须非负")
-                result = optimize_aim(
-                    self.current_prediction, x_axis, y_axis,
-                    spread_mode="CEP", cep=cep_val, reliability=1.0,
-                )
-            else:
-                rep_val = float(self.rep_var.get())
-                dep_val = float(self.dep_var.get())
-                rho_val = float(self.aim_rho_var.get())
-                if not (-1.0 < rho_val < 1.0):
-                    raise ValueError("相关系数 ρ 必须在 (−1, 1) 开区间内")
-                theta_text = self.aim_theta_var.get().strip()
-                theta_deg = float(theta_text) if theta_text else None
-                if theta_deg is not None and not (-180.0 <= theta_deg <= 180.0):
-                    raise ValueError("旋转角 θ 必须在 [−180, 180] 度范围内")
-                result = optimize_aim(
-                    self.current_prediction, x_axis, y_axis,
-                    spread_mode="REP_DEP", rep=rep_val, dep=dep_val,
-                    rho=rho_val, theta_deg=theta_deg, reliability=1.0,
-                )
-
+            result = self.aim_service.optimize(
+                self.current_prediction, x_axis, y_axis, spread_mode=mode,
+                cep=self.cep_var.get(), rep=self.rep_var.get(), dep=self.dep_var.get(),
+                rho=self.aim_rho_var.get(), theta_deg=self.aim_theta_var.get(),
+                reliability=1.0,
+            )
             self.current_aim_result = result
             self.current_value_field = result.value_field
-
-            figure = render_aim_optimization(
-                self.current_prediction, result, self._active_config()
+            figure = render_aim_optimization(self.current_prediction, result, self._active_config())
+            self.visualization.set_figure(figure, "aim")
+            self.visualization.set_view("aim")
+            self.current_figure = figure
+            self._sync_visualization_context()
+            rho = getattr(result, "rho", 0.0) or 0.0
+            spread_text = f"σx={result.sigma_x:.1f} m, σy={result.sigma_y:.1f} m"
+            if rho:
+                spread_text += f", ρ={rho:.2f}"
+            self.aim_panel.set_summary(
+                f"Best point: ({result.best_x:.1f}, {result.best_y:.1f}) m\n"
+                f"Vmax: {result.vmax:.4f}\n"
+                f"Relative gain: {result.gain_relative:+.2%}\n"
+                f"Shift: {result.shift_distance:.1f} m\n{spread_text}"
             )
-            self._draw_figure(figure, which="aim")
-            self._update_aim_summary(result)
-
-            self.result_tabs.select(self.tab_frames["aim"])
-
-            if mode == "CEP":
-                mode_label = f"CEP={self.cep_var.get()}m"
-            else:
-                mode_label = (
-                    f"REP={self.rep_var.get()}/DEP={self.dep_var.get()}m"
-                )
-                rho_used = result.rho
-                if rho_used:
-                    mode_label += f", ρ={rho_used:.2f}"
+            mode_label = (
+                f"CEP={self.cep_var.get()} m" if mode == "CEP"
+                else f"REP={self.rep_var.get()} m / DEP={self.dep_var.get()} m"
+            )
+            if mode != "CEP" and rho:
+                mode_label += f", ρ={rho:.2f}"
             self._set_status(
                 f"瞄准优化完成 ({mode_label}): 最佳瞄准点 "
                 f"({result.best_x:.1f}, {result.best_y:.1f}) m, "
@@ -1650,70 +966,42 @@ class DamagePredictionGUI:
         except Exception as exc:
             self._handle_error("瞄准优化失败", exc)
 
-    def _update_aim_summary(self, result: AimOptimizationResult) -> None:
-        """在瞄准优化标签页底部显示结果摘要。"""
-        frame = self.tab_frames.get("aim")
-        if frame is None:
-            return
-
-        # 查找或创建摘要条
-        summary_frame = getattr(self, "_aim_summary_frame", None)
-        if summary_frame is not None:
-            summary_frame.destroy()
-
-        summary_frame = tk.Frame(frame, bg=CONFIG.ui_panel_bg, relief="flat",
-                                 highlightbackground=CONFIG.ui_border,
-                                 highlightthickness=1)
-        summary_frame.grid(row=1, column=0, sticky="ew", padx=4, pady=(4, 2))
-        self._aim_summary_frame = summary_frame
-
-        rho = getattr(result, "rho", 0.0) or 0.0
-        spread_text = f"σx={result.sigma_x:.1f}, σy={result.sigma_y:.1f}"
-        if rho:
-            spread_text += f", ρ={rho:.2f}"
-        items = [
-            ("最佳瞄准点", f"({result.best_x:.1f}, {result.best_y:.1f}) m"),
-            ("Vmax", f"{result.vmax:.4f}"),
-            ("相对直瞄增益", f"+{result.gain_relative:.2%}" if result.gain_relative >= 0
-                            else f"{result.gain_relative:.2%}"),
-            ("位移", f"{result.shift_distance:.1f} m"),
-            ("散布参数 (m)", spread_text),
-        ]
-        for i, (label, value) in enumerate(items):
-            cell = tk.Frame(summary_frame, bg=CONFIG.ui_panel_bg)
-            cell.grid(row=0, column=i, sticky="ew", padx=8, pady=6)
-            summary_frame.columnconfigure(i, weight=1)
-            tk.Label(cell, text=label, bg=CONFIG.ui_panel_bg, fg=CONFIG.ui_muted,
-                     font=("Microsoft YaHei", 9)).pack()
-            tk.Label(cell, text=value, bg=CONFIG.ui_panel_bg, fg=CONFIG.ui_text,
-                     font=("Microsoft YaHei", 11, "bold")).pack(pady=(2, 0))
+    # ---------- Errors and shutdown ----------
 
     def _handle_error(self, title: str, exc: Exception) -> None:
-        """错误处理：完整 traceback 记入日志文件，界面只展示友好消息。"""
         self._logger.exception("%s: %s", title, exc)
         self._set_status(f"{title}: {exc}", kind="error")
-        messagebox.showerror(
-            title, f"{exc}\n\n详细信息已记录到日志文件 logs/damage_gui.log。"
-        )
+        messagebox.showerror(title, f"{exc}\n\n详细信息已记录到日志文件 logs/damage_gui.log。")
 
     def _show_error(self, title: str, message: str) -> None:
-        """展示后台任务失败摘要（traceback 已由任务管理器记录日志）。"""
         self._set_status(f"{title}: {message}", kind="error")
         messagebox.showerror(title, message)
 
     def _on_close(self) -> None:
-        """关闭窗口：请求取消后台任务并限时等待线程退出，再销毁窗口。"""
         self.task_manager.shutdown(timeout=2.0)
         self.root.destroy()
 
 
+def create_root() -> tk.Tk:
+    """Create a desktop root after selecting DPI awareness and Tk scaling."""
+    awareness = enable_windows_dpi_awareness()
+    matplotlib.use("TkAgg")
+    root = tk.Tk()
+    scaling = sync_tk_scaling(root)
+    install_tk_scaling_monitor(root)
+    logging.getLogger("damage_gui.gui.dpi").info(
+        "DPI awareness=%s via %s; monitor_dpi=%s; Tk scaling %.4f -> %.4f",
+        awareness.mode,
+        awareness.api,
+        scaling.actual_dpi if scaling.actual_dpi is not None else "unknown",
+        scaling.before if scaling.before is not None else 0.0,
+        scaling.after if scaling.after is not None else 0.0,
+    )
+    return root
+
+
 def main() -> None:
     setup_logging()
-    root = tk.Tk()
-    style = ttk.Style(root)
-    try:
-        style.theme_use("clam")
-    except tk.TclError:
-        pass
+    root = create_root()
     DamagePredictionGUI(root)
     root.mainloop()

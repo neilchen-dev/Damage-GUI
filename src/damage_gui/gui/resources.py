@@ -1,26 +1,24 @@
-"""GUI 资源与运行目录解析（源码 / PyInstaller 双模式）。"""
+"""GUI 资源与运行目录解析（向后兼容 shim）。
+
+路径实现已迁移至 damage_gui.runtime.paths（存储层/日志等非 GUI 模块
+改从 runtime 导入，解除"下层依赖 gui 包"的违规）；本模块保留旧导入
+路径 damage_gui.gui.resources 以兼容历史脚本与打包配置。
+
+注意：app_base_dir/resource_path 从 runtime re-export，行为与迁移前
+一致；resource_path 缺省锚定 runtime 模块目录，GUI 资源（图标）须
+显式传入 gui 目录以保持解析位置不变。
+"""
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-
-def resource_path(filename: str) -> Path:
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS) / filename
-    return Path(__file__).with_name(filename)
-
-
-def app_base_dir() -> Path:
-    """源码运行返回项目根目录，打包运行返回 exe 所在目录。"""
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parents[3]
+from damage_gui.runtime.paths import app_base_dir, resource_path  # noqa: F401
 
 
 def resolve_icon_paths() -> tuple[Path | None, Path | None]:
-    ico_path = resource_path("damage_app_icon.ico")
-    png_path = resource_path("damage_app_icon.png")
+    gui_dir = Path(__file__).parent
+    ico_path = resource_path("damage_app_icon.ico", base_dir=gui_dir)
+    png_path = resource_path("damage_app_icon.png", base_dir=gui_dir)
     return (
         ico_path if ico_path.exists() else None,
         png_path if png_path.exists() else None,

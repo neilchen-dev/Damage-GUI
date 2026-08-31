@@ -10,7 +10,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from damage_gui.gui.resources import app_base_dir
+from damage_gui.runtime.paths import app_base_dir
 
 LOG_DIR_NAME = "logs"
 LOG_FILE_NAME = "damage_gui.log"

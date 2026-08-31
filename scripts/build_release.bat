@@ -20,7 +20,7 @@ pyinstaller ^
   --distpath "release" ^
   --workpath "build\release" ^
   --specpath "build\release" ^
-  "src\damage_gui\app.py"
+  "src\damage_gui\desktop.py"
 
 if errorlevel 1 exit /b 1
 
