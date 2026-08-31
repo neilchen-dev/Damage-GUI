@@ -96,6 +96,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 }
 .context-divider { width: 1px; height: 16px; background: var(--border); margin: 0 5px; }
 .header-actions { gap: 6px; }
+.language-picker { color: var(--muted); font-size: 10px; }
+.language-select {
+  min-height: 25px;
+  padding: 3px 5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+}
 
 .global-toolbar {
   display: flex;

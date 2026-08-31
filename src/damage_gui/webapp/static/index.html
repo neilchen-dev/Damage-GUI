@@ -17,122 +17,127 @@
         </div>
         <div>
           <div class="brand-name">DamageLab</div>
-          <div class="brand-subtitle">Damage-Field Prediction &amp; Analysis</div>
+          <div class="brand-subtitle" data-i18n="brand.subtitle">Damage-Field Prediction &amp; Analysis</div>
         </div>
       </div>
-      <div class="menu-strip" aria-label="Workbench menu">
-        <span>File</span>
-        <span>View</span>
-        <span>Analysis</span>
-        <span>Results</span>
-        <span>Help</span>
+      <div class="menu-strip" aria-label="Workbench menu" data-i18n-aria-label="aria.menu">
+        <span data-i18n="menu.file">File</span>
+        <span data-i18n="menu.view">View</span>
+        <span data-i18n="menu.analysis">Analysis</span>
+        <span data-i18n="menu.results">Results</span>
+        <span data-i18n="menu.help">Help</span>
       </div>
-      <div class="header-context" aria-label="Server context">
-        <span class="context-label">SERVER</span>
-        <span id="server-status" class="status-text status-neutral">Checking...</span>
+      <div class="header-context" aria-label="Server context" data-i18n-aria-label="aria.server_context">
+        <span class="context-label" data-i18n="context.server">SERVER</span>
+        <span id="server-status" class="status-text status-neutral" data-i18n="status.checking">Checking...</span>
         <span class="context-divider" aria-hidden="true"></span>
-        <span class="context-label">VERSION</span>
+        <span class="context-label" data-i18n="context.version">VERSION</span>
         <span id="server-version" class="mono">—</span>
       </div>
       <div class="header-actions">
-        <button id="refresh-button" class="button button-quiet" type="button">Refresh</button>
+        <label class="language-picker" for="language-select" data-i18n="language.label">Language</label>
+        <select id="language-select" class="language-select" aria-label="Language" data-i18n-aria-label="language.label">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+        <button id="refresh-button" class="button button-quiet" type="button" data-i18n="toolbar.refresh">Refresh</button>
       </div>
     </header>
 
-    <div class="global-toolbar" role="toolbar" aria-label="Workbench toolbar">
+    <div class="global-toolbar" role="toolbar" aria-label="Workbench toolbar" data-i18n-aria-label="aria.toolbar">
       <div class="toolbar-context">
-        <span class="toolbar-label">ACTIVE MODEL</span>
-        <span id="toolbar-model" class="toolbar-value">No model selected</span>
+        <span class="toolbar-label" data-i18n="toolbar.active_model">ACTIVE MODEL</span>
+        <span id="toolbar-model" class="toolbar-value" data-i18n="model.none">No model selected</span>
       </div>
       <div class="toolbar-actions">
-        <button id="toolbar-run" class="button button-primary" type="button" disabled>Run Prediction</button>
+        <button id="toolbar-run" class="button button-primary" type="button" disabled data-i18n="action.run_prediction">Run Prediction</button>
       </div>
     </div>
 
     <main class="workbench-main">
-      <nav class="left-navigation" aria-label="Workbench navigation">
+      <nav class="left-navigation" aria-label="Workbench navigation" data-i18n-aria-label="aria.navigation">
         <div class="nav-group">
-          <div class="nav-group-label">PROJECT</div>
-          <button class="nav-item" type="button" data-panel="model"><span class="nav-index">01</span><span>Model</span></button>
-          <button class="nav-item" type="button" data-panel="validation"><span class="nav-index">02</span><span>Validation</span></button>
+          <div class="nav-group-label" data-i18n="nav.project">PROJECT</div>
+          <button class="nav-item" type="button" data-panel="model"><span class="nav-index">01</span><span data-i18n="nav.model">Model</span></button>
+          <button class="nav-item" type="button" data-panel="validation"><span class="nav-index">02</span><span data-i18n="nav.validation">Validation</span></button>
         </div>
         <div class="nav-group">
-          <div class="nav-group-label">ANALYSIS</div>
-          <button class="nav-item is-active" type="button" data-panel="prediction"><span class="nav-index">03</span><span>Prediction</span></button>
-          <button class="nav-item" type="button" data-panel="batch"><span class="nav-index">04</span><span>Batch Prediction</span></button>
-          <button class="nav-item" type="button" data-panel="aim"><span class="nav-index">05</span><span>Aim Optimization</span></button>
+          <div class="nav-group-label" data-i18n="nav.analysis">ANALYSIS</div>
+          <button class="nav-item is-active" type="button" data-panel="prediction"><span class="nav-index">03</span><span data-i18n="nav.prediction">Prediction</span></button>
+          <button class="nav-item" type="button" data-panel="batch"><span class="nav-index">04</span><span data-i18n="nav.batch">Batch Prediction</span></button>
+          <button class="nav-item" type="button" data-panel="aim"><span class="nav-index">05</span><span data-i18n="nav.aim">Aim Optimization</span></button>
         </div>
         <div class="nav-group">
-          <div class="nav-group-label">RESULTS</div>
-          <button class="nav-item" type="button" data-panel="history"><span class="nav-index">06</span><span>History</span></button>
-          <button class="nav-item" type="button" data-panel="export"><span class="nav-index">07</span><span>Export</span></button>
+          <div class="nav-group-label" data-i18n="nav.results">RESULTS</div>
+          <button class="nav-item" type="button" data-panel="history"><span class="nav-index">06</span><span data-i18n="nav.history">History</span></button>
+          <button class="nav-item" type="button" data-panel="export"><span class="nav-index">07</span><span data-i18n="nav.export">Export</span></button>
         </div>
         <div class="nav-footer">
-          <span class="nav-footer-label">API MODE</span>
+          <span class="nav-footer-label" data-i18n="nav.api_mode">API MODE</span>
           <span id="nav-api-mode" class="mono">SAME-ORIGIN</span>
         </div>
       </nav>
 
-      <aside class="properties-panel" aria-label="Properties">
+      <aside class="properties-panel" aria-label="Properties" data-i18n-aria-label="properties.title">
         <div class="panel-heading">
-          <span class="panel-kicker">PROPERTIES</span>
+          <span class="panel-kicker" data-i18n="properties.title_upper">PROPERTIES</span>
           <span id="properties-context" class="mono">PREDICTION</span>
         </div>
 
         <section class="property-section" data-property-panel="model" hidden>
-          <div class="section-title">Model Selection</div>
-          <label class="field-label" for="model-select">Server model</label>
+          <div class="section-title" data-i18n="model.selection">Model Selection</div>
+          <label class="field-label" for="model-select" data-i18n="model.server_model">Server model</label>
           <select id="model-select" class="control" disabled>
-            <option value="">Loading models...</option>
+            <option value="" data-i18n="model.loading">Loading models...</option>
           </select>
-          <div id="model-empty" class="inline-state" hidden>No server models available.</div>
+          <div id="model-empty" class="inline-state" hidden data-i18n="model.empty">No server models available.</div>
           <dl id="model-summary" class="property-list"></dl>
-          <div class="section-title section-title-spaced">Metadata</div>
+          <div class="section-title section-title-spaced" data-i18n="model.metadata">Metadata</div>
           <dl id="model-metadata" class="property-list property-list-small"></dl>
         </section>
 
         <section class="property-section" data-property-panel="validation" hidden>
-          <div class="section-title">Validation Summary</div>
-          <div id="validation-empty" class="inline-state">Select a model with validation metadata.</div>
+          <div class="section-title" data-i18n="validation.summary">Validation Summary</div>
+          <div id="validation-empty" class="inline-state" data-i18n="validation.empty">Select a model with validation metadata.</div>
           <dl id="validation-summary" class="property-list"></dl>
         </section>
 
         <section class="property-section" data-property-panel="prediction">
-          <div class="section-title">Input Condition</div>
-          <p class="section-note">Values are validated by the server model.</p>
+          <div class="section-title" data-i18n="prediction.input_condition">Input Condition</div>
+          <p class="section-note" data-i18n="prediction.condition_note">Values are validated by the server model.</p>
           <form id="prediction-form" novalidate>
-            <label class="field-label" for="condition-h">Height, h</label>
+            <label class="field-label" for="condition-h" data-i18n="condition.height">Height, h</label>
             <div class="input-with-unit"><input id="condition-h" class="control numeric" name="h" type="number" step="any" placeholder="h"><span>mm</span></div>
-            <label class="field-label" for="condition-v">Velocity, v</label>
+            <label class="field-label" for="condition-v" data-i18n="condition.velocity">Velocity, v</label>
             <div class="input-with-unit"><input id="condition-v" class="control numeric" name="v" type="number" step="any" placeholder="v"><span>m/s</span></div>
-            <label class="field-label" for="condition-deg">Angle, θ</label>
+            <label class="field-label" for="condition-deg" data-i18n="condition.angle">Angle, θ</label>
             <div class="input-with-unit"><input id="condition-deg" class="control numeric" name="deg" type="number" step="any" placeholder="θ"><span>deg</span></div>
-            <button id="prediction-submit" class="button button-primary button-wide" type="submit" disabled>Run Prediction</button>
+            <button id="prediction-submit" class="button button-primary button-wide" type="submit" disabled data-i18n="action.run_prediction">Run Prediction</button>
           </form>
           <div id="prediction-form-message" class="form-message" role="alert" hidden></div>
         </section>
 
         <section class="property-section" data-property-panel="batch" hidden>
-          <div class="section-title">Batch Prediction</div>
-          <p class="section-note">Upload a CSV to the server queue. The file path never leaves this browser.</p>
-          <label class="field-label" for="batch-file">CSV file</label>
+          <div class="section-title" data-i18n="batch.title">Batch Prediction</div>
+          <p class="section-note" data-i18n="batch.note">Upload a CSV to the server queue. The file path never leaves this browser.</p>
+          <label class="field-label" for="batch-file" data-i18n="batch.csv_file">CSV file</label>
           <input id="batch-file" class="control" type="file" accept=".csv,text/csv">
           <dl id="batch-file-meta" class="property-list property-list-small"></dl>
-          <button id="batch-submit" class="button button-primary button-wide" type="button" disabled>Run Batch</button>
-          <button id="batch-cancel" class="button button-quiet button-wide" type="button" disabled>Cancel</button>
+          <button id="batch-submit" class="button button-primary button-wide" type="button" disabled data-i18n="action.run_batch">Run Batch</button>
+          <button id="batch-cancel" class="button button-quiet button-wide" type="button" disabled data-i18n="action.cancel">Cancel</button>
           <div id="batch-progress-block" class="batch-progress-block" hidden>
             <div class="batch-progress-label"><span id="batch-progress-text">Batch · 0 / 0 · 0%</span><span id="batch-progress-stage" class="mono">Queued</span></div>
             <div class="progress-track" aria-hidden="true"><div id="batch-progress-fill" class="progress-fill"></div></div>
           </div>
           <div id="batch-message" class="form-message" role="alert" hidden></div>
-          <a id="batch-download" class="button button-secondary button-wide" href="#" download hidden>Download batch CSV</a>
+          <a id="batch-download" class="button button-secondary button-wide" href="#" download hidden data-i18n="action.download_batch_csv">Download batch CSV</a>
         </section>
 
         <section class="property-section" data-property-panel="aim" hidden>
-          <div class="section-title">Aim Optimization</div>
-          <p class="section-note">Uses the current prediction result.</p>
+          <div class="section-title" data-i18n="aim.title">Aim Optimization</div>
+          <p class="section-note" data-i18n="aim.note">Uses the current prediction result.</p>
           <form id="aim-form" novalidate>
-            <label class="field-label" for="spread-mode">Spread model</label>
+            <label class="field-label" for="spread-mode" data-i18n="aim.spread_model">Spread model</label>
             <select id="spread-mode" class="control" name="spread_mode">
               <option value="CEP">CEP</option>
               <option value="REP_DEP">REP / DEP</option>
@@ -151,115 +156,115 @@
               <label class="field-label" for="aim-theta">θ</label>
               <div class="input-with-unit"><input id="aim-theta" class="control numeric" name="theta_deg" type="number" step="any" placeholder="θ"><span>deg</span></div>
             </div>
-            <label class="field-label" for="aim-reliability">Reliability</label>
+            <label class="field-label" for="aim-reliability" data-i18n="aim.reliability">Reliability</label>
             <input id="aim-reliability" class="control numeric" name="reliability" type="number" step="any" min="0.000001" max="1" value="1">
-            <button id="aim-submit" class="button button-primary button-wide" type="submit" disabled>Run AIM</button>
+            <button id="aim-submit" class="button button-primary button-wide" type="submit" disabled data-i18n="action.run_aim">Run AIM</button>
           </form>
           <div id="aim-form-message" class="form-message" role="alert" hidden></div>
         </section>
 
         <section class="property-section" data-property-panel="history" hidden>
-          <div class="section-title">Execution History</div>
-          <p class="section-note">Traceability records from the configured server database.</p>
+          <div class="section-title" data-i18n="history.title">Execution History</div>
+          <p class="section-note" data-i18n="history.note">Traceability records from the configured server database.</p>
           <div class="history-actions">
-            <button id="history-refresh" class="button button-quiet" type="button">Reload</button>
+            <button id="history-refresh" class="button button-quiet" type="button" data-i18n="action.reload">Reload</button>
             <span id="history-count" class="mono">—</span>
           </div>
-          <div id="history-state" class="inline-state">Loading history...</div>
+          <div id="history-state" class="inline-state" data-i18n="history.loading">Loading history...</div>
           <div class="history-table-wrap">
             <table id="history-table" class="history-table" hidden>
-              <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Created</th></tr></thead>
+          <thead><tr><th data-i18n="history.id">ID</th><th data-i18n="history.type">Type</th><th data-i18n="history.status">Status</th><th data-i18n="history.created">Created</th></tr></thead>
               <tbody id="history-body"></tbody>
             </table>
           </div>
           <div class="pagination">
-            <button id="history-prev" class="button button-quiet" type="button" disabled>Previous</button>
-            <button id="history-next" class="button button-quiet" type="button" disabled>Next</button>
+            <button id="history-prev" class="button button-quiet" type="button" disabled data-i18n="action.previous">Previous</button>
+            <button id="history-next" class="button button-quiet" type="button" disabled data-i18n="action.next">Next</button>
           </div>
         </section>
 
         <section class="property-section" data-property-panel="export" hidden>
-          <div class="section-title">Result Export</div>
-          <p class="section-note">Downloads are generated by the server from the stored result.</p>
-          <div id="export-empty" class="inline-state">Run a prediction to enable exports.</div>
+          <div class="section-title" data-i18n="export.title">Result Export</div>
+          <p class="section-note" data-i18n="export.note">Downloads are generated by the server from the stored result.</p>
+          <div id="export-empty" class="inline-state" data-i18n="export.empty">Run a prediction to enable exports.</div>
           <dl id="export-summary" class="property-list"></dl>
           <div class="stacked-actions">
-            <a id="export-png" class="button button-secondary button-wide" href="#" download hidden>Download PNG</a>
-            <a id="export-csv" class="button button-secondary button-wide" href="#" download hidden>Download CSV</a>
+            <a id="export-png" class="button button-secondary button-wide" href="#" download hidden data-i18n="action.download_png">Download PNG</a>
+            <a id="export-csv" class="button button-secondary button-wide" href="#" download hidden data-i18n="action.download_csv">Download CSV</a>
           </div>
         </section>
       </aside>
 
-      <section class="visualization-panel" aria-label="Visualization">
+      <section class="visualization-panel" aria-label="Visualization" data-i18n-aria-label="viewport.visualization">
         <div class="viewport-header">
           <div>
-            <div class="panel-kicker">VIEWPORT / RESULT</div>
-            <h1 id="viewport-title">Damage Field — Single Prediction</h1>
-            <p id="viewport-subtitle" class="viewport-subtitle">Run a prediction to load the server-rendered damage field.</p>
+            <div class="panel-kicker" data-i18n="viewport.kicker">VIEWPORT / RESULT</div>
+            <h1 id="viewport-title" data-i18n="viewport.title">Damage Field — Single Prediction</h1>
+            <p id="viewport-subtitle" class="viewport-subtitle" data-i18n="viewport.subtitle">Run a prediction to load the server-rendered damage field.</p>
           </div>
-          <span id="viewport-badge" class="result-badge">NO RESULT</span>
+          <span id="viewport-badge" class="result-badge" data-i18n="result.no_result">NO RESULT</span>
         </div>
-        <div class="viewport-toolbar" role="toolbar" aria-label="Viewport toolbar">
-          <button id="fit-button" class="button button-quiet is-selected" type="button">Fit</button>
+        <div class="viewport-toolbar" role="toolbar" aria-label="Viewport toolbar" data-i18n-aria-label="aria.viewport_toolbar">
+          <button id="fit-button" class="button button-quiet is-selected" type="button" data-i18n="action.fit">Fit</button>
           <button id="actual-button" class="button button-quiet" type="button">1:1</button>
           <span class="toolbar-separator" aria-hidden="true"></span>
-          <a id="viewport-download" class="button button-quiet is-disabled" href="#" download>Download PNG</a>
-          <span class="viewport-toolbar-note">Server PNG</span>
+          <a id="viewport-download" class="button button-quiet is-disabled" href="#" download data-i18n="action.download_png">Download PNG</a>
+          <span class="viewport-toolbar-note" data-i18n="viewport.server_png">Server PNG</span>
         </div>
         <div id="plot-surface" class="plot-surface" aria-busy="false">
-          <div id="viewport-loading" class="viewport-state" hidden>Loading result...</div>
+          <div id="viewport-loading" class="viewport-state" hidden data-i18n="viewport.loading">Loading result...</div>
           <div id="viewport-empty" class="viewport-state">
-            <div class="empty-code">VIEWPORT EMPTY</div>
-            <div>Run a prediction to view results.</div>
+            <div class="empty-code" data-i18n="viewport.empty_code">VIEWPORT EMPTY</div>
+            <div data-i18n="viewport.empty_text">Run a prediction to view results.</div>
           </div>
-          <img id="result-image" class="result-image fit" alt="Server-rendered damage field" hidden>
+          <img id="result-image" class="result-image fit" alt="Server-rendered damage field" data-i18n-alt="viewport.image_alt" hidden>
         </div>
       </section>
 
-      <aside class="results-panel" aria-label="Results">
+      <aside class="results-panel" aria-label="Results" data-i18n-aria-label="results.title">
         <div class="panel-heading">
-          <span class="panel-kicker">RESULTS</span>
-          <span id="results-run" class="mono">NO RUN</span>
+          <span class="panel-kicker" data-i18n="results.title_upper">RESULTS</span>
+          <span id="results-run" class="mono" data-i18n="result.no_run">NO RUN</span>
         </div>
-        <div id="results-empty" class="inline-state">Prediction values will appear here.</div>
+        <div id="results-empty" class="inline-state" data-i18n="results.empty">Prediction values will appear here.</div>
         <div id="results-content" hidden>
           <section class="result-section">
-            <div class="section-title">Field Summary</div>
+            <div class="section-title" data-i18n="results.field_summary">Field Summary</div>
             <dl id="field-summary" class="property-list"></dl>
           </section>
           <section class="result-section">
-            <div class="section-title">Validation</div>
+            <div class="section-title" data-i18n="nav.validation">Validation</div>
             <dl id="result-validation" class="property-list"></dl>
           </section>
           <section class="result-section">
-            <div class="section-title">Confidence / OOD</div>
+            <div class="section-title" data-i18n="results.confidence_ood">Confidence / OOD</div>
             <dl id="result-ood" class="property-list"></dl>
           </section>
           <section class="result-section">
-            <div class="section-title">Run Information</div>
+            <div class="section-title" data-i18n="results.run_information">Run Information</div>
             <dl id="run-summary" class="property-list"></dl>
           </section>
           <section class="result-section">
-            <div class="section-title">Advice</div>
+            <div class="section-title" data-i18n="results.advice">Advice</div>
             <dl id="advice-summary" class="property-list"></dl>
           </section>
           <section id="aim-result-section" class="result-section" hidden>
-            <div class="section-title">AIM Summary</div>
+            <div class="section-title" data-i18n="results.aim_summary">AIM Summary</div>
             <dl id="aim-summary" class="property-list"></dl>
-            <p class="section-note">Summary returned by the server. No separate AIM image endpoint is exposed.</p>
+            <p class="section-note" data-i18n="results.aim_note">Summary returned by the server. No separate AIM image endpoint is exposed.</p>
           </section>
         </div>
         <section id="batch-result-section" class="result-section" hidden>
-          <div class="section-title">Batch Summary</div>
+          <div class="section-title" data-i18n="results.batch_summary">Batch Summary</div>
           <dl id="batch-result-summary" class="property-list"></dl>
-          <a id="batch-result-download" class="button button-secondary button-wide" href="#" download hidden>Download batch CSV</a>
+          <a id="batch-result-download" class="button button-secondary button-wide" href="#" download hidden data-i18n="action.download_batch_csv">Download batch CSV</a>
         </section>
       </aside>
     </main>
 
     <footer class="status-bar" aria-live="polite">
       <span id="status-indicator" class="status-dot status-dot-neutral" aria-hidden="true"></span>
-      <span id="status-message">Initializing Workbench...</span>
+      <span id="status-message" data-i18n="status.initializing">Initializing Workbench...</span>
       <span id="status-detail" class="status-detail"></span>
     </footer>
   </div>

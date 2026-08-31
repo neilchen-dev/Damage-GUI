@@ -6,7 +6,7 @@
 
 这是一个面向仿真毁伤数据的工程化预测工作台：根据飞行/撞击工况重建二维毁伤场，并提供精度评估、可信度检测、可视化和瞄准点优化能力。产品同时提供 Windows 桌面 GUI、命令行工具和 FastAPI Web 服务，适合研究验证、批量计算与可追溯交付。
 
-桌面端支持在运行时切换 **中文 / English**；语言只影响展示层，不改变模型文件、CSV/SQLite 数据格式或科学计算结果。项目同时具备模型元数据追溯、SQLite 任务/结果管理、后台任务状态机、批量预测、统一日志与错误体系、数值回归测试、双平台 CI 与 Windows 桌面交付。
+桌面端与 Web 工作台均支持在运行时切换 **中文 / English**；Web 端可通过右上角语言选择器切换，语言只影响展示层，不改变模型文件、CSV/SQLite 数据格式或科学计算结果。项目同时具备模型元数据追溯、SQLite 任务/结果管理、后台任务状态机、批量预测、统一日志与错误体系、数值回归测试、双平台 CI 与 Windows 桌面交付。
 
 **英文定位**：Centroid-Aligned POD-RBF Surrogate Model for Fast Reconstruction and Assessment of High-Dimensional Damage Fields
 
@@ -94,7 +94,7 @@ Storage / Files               SQLite 追溯库（models / jobs / prediction_resu
 
 ## 产品界面与国际化
 
-桌面端使用当前真实的四栏工程工作台：导航、上下文属性、Matplotlib 科学视口和结果追溯面板。工具栏右侧的 **语言 / Language** 选择器可即时切换中英文；模型类型、验证方式等内部值保持稳定。
+桌面端使用当前真实的四栏工程工作台：导航、上下文属性、Matplotlib 科学视口和结果追溯面板。桌面工具栏和 Web 工作台右上角的 **语言 / Language** 选择器可即时切换中英文；模型类型、验证方式等内部值保持稳定。
 
 中文界面：
 

@@ -2,6 +2,13 @@
   "use strict";
 
   const state = {
+    language: (() => {
+      try {
+        const saved = window.localStorage.getItem("damagelab-language");
+        if (saved === "zh" || saved === "en") return saved;
+      } catch (_error) { /* localStorage may be unavailable in a restricted browser */ }
+      return String(navigator.language || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
+    })(),
     health: null,
     models: [],
     selectedModel: null,
@@ -13,11 +20,170 @@
     historyLimit: 20,
     batchFile: null,
     batchJob: null,
+    batchResult: null,
     batchPollTimer: null,
     activePanel: "prediction",
     busy: false,
     imageMode: "fit",
+    status: null,
   };
+
+  const TRANSLATIONS = {
+    en: {
+      "brand.title": "DamageLab — Damage-Field Prediction & Analysis", "language.label": "Language",
+      "aria.menu": "Workbench menu", "aria.server_context": "Server context", "aria.toolbar": "Workbench toolbar",
+      "aria.navigation": "Workbench navigation", "aria.viewport_toolbar": "Viewport toolbar",
+      "brand.subtitle": "Damage-Field Prediction & Analysis",
+      "menu.file": "File", "menu.view": "View", "menu.analysis": "Analysis",
+      "menu.results": "Results", "menu.help": "Help",
+      "context.server": "SERVER", "context.version": "VERSION",
+      "status.checking": "Checking...", "status.online": "Online",
+      "status.api_unavailable": "API unavailable", "status.initializing": "Initializing Workbench...",
+      "status.checking_api": "Checking API...", "status.ready_models": "Ready · {{count}} model{{suffix}}",
+      "status.ready_no_models": "Ready · no server models", "status.model_selected": "Model selected · {{id}}",
+      "status.running_prediction": "Running prediction...", "status.prediction_complete": "Prediction complete · {{ms}} ms",
+      "status.prediction_png_ready": "{{id}} · PNG ready", "status.prediction_request_failed": "Prediction request failed",
+      "status.result_ready": "RESULT READY",
+      "status.running_aim": "Running AIM optimization...", "status.aim_complete": "AIM complete",
+      "status.aim_summary_ready": "{{mode}} · summary ready", "status.aim_request_failed": "AIM request failed",
+      "status.submitting_batch": "Submitting batch...", "status.batch_queued": "Batch queued",
+      "status.cancelling_batch": "Cancelling batch...", "status.batch_cancellation_cooperative": "Cancellation is cooperative",
+      "status.batch_running": "Batch running...", "status.batch_complete": "Batch complete",
+      "status.batch_failed": "Batch {{state}}", "status.batch_submission_failed": "Batch submission failed",
+      "status.batch_status_failed": "Batch status request failed", "status.batch_cancellation_failed": "Batch cancellation failed",
+      "status.loading_result": "Loading result...", "status.no_browser_result": "No browser result attached",
+      "status.unsupported_history": "{{id}} · unsupported history type", "status.history_request_failed": "History request failed",
+      "status.result_image_unavailable": "Result image unavailable", "status.result_image_detail": "The structured result is still available",
+      "status.result_image_request_failed": "The result image request failed", "status.rows": "{{completed}} / {{total}} rows", "status.row_count": "{{count}} rows",
+      "toolbar.refresh": "Refresh", "toolbar.active_model": "ACTIVE MODEL",
+      "action.run_prediction": "Run Prediction", "action.run_batch": "Run Batch", "action.run_aim": "Run AIM",
+      "action.cancel": "Cancel", "action.reload": "Reload", "action.previous": "Previous", "action.next": "Next",
+      "action.fit": "Fit", "action.download_png": "Download PNG", "action.download_csv": "Download CSV",
+      "action.download_batch_csv": "Download batch CSV",
+      "nav.project": "PROJECT", "nav.analysis": "ANALYSIS", "nav.results": "RESULTS",
+      "nav.model": "Model", "nav.validation": "Validation", "nav.prediction": "Prediction",
+      "nav.batch": "Batch Prediction", "nav.aim": "Aim Optimization", "nav.history": "History", "nav.export": "Export",
+      "nav.api_mode": "API MODE", "api.configured": "CONFIGURED API", "api.same_origin": "SAME-ORIGIN",
+      "properties.title": "Properties", "properties.title_upper": "PROPERTIES",
+      "model.selection": "Model Selection", "model.server_model": "Server model", "model.loading": "Loading models...",
+      "model.empty": "No server models available.", "model.metadata": "Metadata", "model.none": "No model selected",
+      "validation.summary": "Validation Summary", "validation.empty": "Select a model with validation metadata.",
+      "prediction.input_condition": "Input Condition", "prediction.condition_note": "Values are validated by the server model.",
+      "condition.height": "Height, h", "condition.velocity": "Velocity, v", "condition.angle": "Angle, θ",
+      "batch.title": "Batch Prediction", "batch.note": "Upload a CSV to the server queue. The file path never leaves this browser.",
+      "batch.csv_file": "CSV file", "aim.title": "Aim Optimization", "aim.note": "Uses the current prediction result.",
+      "aim.spread_model": "Spread model", "aim.reliability": "Reliability",
+      "history.title": "Execution History", "history.note": "Traceability records from the configured server database.",
+      "history.loading": "Loading history...", "history.id": "ID", "history.type": "Type", "history.status": "Status", "history.created": "Created",
+      "export.title": "Result Export", "export.note": "Downloads are generated by the server from the stored result.",
+      "export.empty": "Run a prediction to enable exports.",
+      "viewport.visualization": "Visualization", "viewport.kicker": "VIEWPORT / RESULT",
+      "viewport.title": "Damage Field — Single Prediction", "viewport.subtitle": "Run a prediction to load the server-rendered damage field.",
+      "viewport.server_png": "Server PNG", "viewport.loading": "Loading result...", "viewport.empty_code": "VIEWPORT EMPTY",
+      "viewport.empty_text": "Run a prediction to view results.", "viewport.image_alt": "Server-rendered damage field",
+      "result.no_result": "NO RESULT", "result.no_run": "NO RUN",
+      "results.title": "Results", "results.title_upper": "RESULTS", "results.empty": "Prediction values will appear here.",
+      "results.field_summary": "Field Summary", "results.confidence_ood": "Confidence / OOD", "results.run_information": "Run Information",
+      "results.advice": "Advice", "results.aim_summary": "AIM Summary", "results.aim_note": "Summary returned by the server. No separate AIM image endpoint is exposed.",
+      "results.batch_summary": "Batch Summary",
+      "label.model_id": "Model ID", "label.type": "Type", "label.damage_level": "Damage level", "label.training_samples": "Training samples",
+      "label.active": "Active", "label.mean_relative_error": "Mean relative error", "label.p95_hybrid_error": "P95 hybrid error",
+      "label.train_time": "Train time", "label.validation_mode": "Validation mode", "label.model_type": "Model type",
+      "label.app_version": "App version", "label.created_at": "Created", "label.schema_version": "Schema version",
+      "label.model_format_version": "Model format", "label.training_data_hash": "Training data hash", "label.code_commit": "Code commit",
+      "label.peak_intensity": "Peak intensity", "label.damaged_area": "Damaged area", "label.metrics": "Metrics",
+      "label.confidence": "Confidence", "label.ood_level": "OOD level", "label.distance": "Distance", "label.extrapolation": "Extrapolation",
+      "label.in_hull": "In hull", "label.local_support": "Local support", "label.ood": "OOD", "label.run_id": "Run ID", "label.model": "Model",
+      "label.elapsed": "Elapsed", "label.truth_available": "Truth available", "label.focus_damage": "Focus damage", "label.scope": "Scope", "label.ood_note": "OOD note",
+      "label.best_x": "Best x", "label.best_y": "Best y", "label.vmax": "Vmax", "label.relative_gain": "Relative gain", "label.shift_distance": "Shift distance",
+      "label.sigma": "σx / σy", "label.rho": "ρ", "label.field_shape": "Field shape", "label.name": "Name", "label.size": "Size", "label.file_type": "Type",
+      "label.state": "State", "label.completed": "Completed", "label.successful_rows": "Successful rows", "label.failed_rows": "Failed rows",
+      "label.duration": "Duration", "label.row_errors": "Row errors",
+      "common.yes": "Yes", "common.no": "No", "common.available": "Available", "common.not_available": "Not available for this run",
+      "common.unknown": "Unknown", "common.records": "records", "common.record": "record", "common.unavailable": "Unavailable",
+      "history.kind_prediction": "Prediction", "history.kind_aim": "AIM", "history.kind_batch": "Batch prediction",
+      "history.status_pending": "Queued", "history.status_running": "Running", "history.status_succeeded": "Succeeded",
+      "history.status_failed": "Failed", "history.status_cancelled": "Cancelled",
+      "model.validation": "Validation: {{label}}", "model.none_status": "No model selected", "validation.select_model": "Select a model with validation metadata.",
+      "message.select_model": "Select an available server model first.", "message.enter_condition": "Enter finite values for h, v, and θ.",
+      "message.run_prediction_first": "Run a prediction before AIM optimization.", "message.enter_reliability": "Enter a finite reliability value.",
+      "message.enter_cep": "Enter CEP for the selected spread model.", "message.enter_rep_dep": "Enter both REP and DEP for the selected spread model.",
+      "message.select_model_file": "Select a server model and CSV file first.",
+      "batch.progress": "Batch · {{completed}} / {{total}} · {{percent}}%", "batch.rows": "{{completed}} / {{total}} rows",
+      "batch.queued": "Queued", "batch.failed": "failed", "batch.succeeded": "succeeded", "batch.cancelled": "cancelled",
+      "ood.not_available": "Not available", "history.none": "No traceability records returned.", "history.count_one": "1 record", "history.count_many": "{{count}} records",
+      "result.no_browser": "No browser result attached", "result.unsupported": "unsupported history type", "export.run_prediction": "Run a prediction to enable exports.",
+      "ood.high_label": "High confidence (interpolation region)", "ood.medium_label": "Medium confidence (sparse-support region)", "ood.low_label": "Low confidence (extrapolation region)",
+      "ood.geometry_edge": "At the edge of the training-data coverage", "ood.geometry_hull": "Outside the global convex hull of training conditions", "ood.geometry_local_hole": "A local data gap inside the global convex hull",
+      "advice.current_condition": "Current condition",
+      "batch.stage_queued": "Queued", "batch.stage_complete": "Complete", "batch.stage_failed": "Failed", "batch.stage_cancelled": "Cancelled before start",
+    },
+    zh: {
+      "brand.title": "DamageLab — 毁伤场快速预测与分析", "language.label": "语言",
+      "aria.menu": "工作台菜单", "aria.server_context": "服务端信息", "aria.toolbar": "工作台工具栏",
+      "aria.navigation": "工作台导航", "aria.viewport_toolbar": "视口工具栏",
+      "brand.subtitle": "毁伤场快速预测与分析",
+      "menu.file": "文件", "menu.view": "视图", "menu.analysis": "分析", "menu.results": "结果", "menu.help": "帮助",
+      "context.server": "服务", "context.version": "版本", "status.checking": "检查中…", "status.online": "在线",
+      "status.api_unavailable": "API 不可用", "status.initializing": "正在初始化工作台…", "status.checking_api": "正在检查 API…",
+      "status.ready_models": "就绪 · {{count}} 个模型", "status.ready_no_models": "就绪 · 没有可用模型", "status.model_selected": "已选择模型 · {{id}}",
+      "status.running_prediction": "正在运行预测…", "status.prediction_complete": "预测完成 · {{ms}} ms", "status.prediction_png_ready": "{{id}} · PNG 已就绪",
+      "status.prediction_request_failed": "预测请求失败", "status.result_ready": "结果已就绪", "status.running_aim": "正在运行瞄准优化…", "status.aim_complete": "瞄准优化完成",
+      "status.aim_summary_ready": "{{mode}} · 摘要已生成", "status.aim_request_failed": "瞄准优化请求失败", "status.submitting_batch": "正在提交批量任务…",
+      "status.batch_queued": "批量任务已排队", "status.cancelling_batch": "正在取消批量任务…", "status.batch_cancellation_cooperative": "取消采用协作式机制",
+      "status.batch_running": "批量任务运行中…", "status.batch_complete": "批量任务完成", "status.batch_failed": "批量任务{{state}}",
+      "status.batch_submission_failed": "批量任务提交失败", "status.batch_status_failed": "批量状态查询失败", "status.batch_cancellation_failed": "批量取消失败",
+      "status.loading_result": "正在加载结果…", "status.no_browser_result": "没有可用的浏览器结果", "status.unsupported_history": "{{id}} · 不支持的历史记录类型",
+      "status.history_request_failed": "历史记录查询失败", "status.result_image_unavailable": "结果图像不可用", "status.result_image_detail": "结构化结果仍然可用",
+      "status.result_image_request_failed": "结果图像请求失败", "status.rows": "{{completed}} / {{total}} 行", "status.row_count": "{{count}} 行",
+      "toolbar.refresh": "刷新", "toolbar.active_model": "当前模型", "action.run_prediction": "运行预测", "action.run_batch": "运行批量预测",
+      "action.run_aim": "运行瞄准优化", "action.cancel": "取消", "action.reload": "重新加载", "action.previous": "上一页", "action.next": "下一页",
+      "action.fit": "适配", "action.download_png": "下载 PNG", "action.download_csv": "下载 CSV", "action.download_batch_csv": "下载批量 CSV",
+      "nav.project": "项目", "nav.analysis": "分析", "nav.results": "结果", "nav.model": "模型", "nav.validation": "验证", "nav.prediction": "预测",
+      "nav.batch": "批量预测", "nav.aim": "瞄准优化", "nav.history": "历史记录", "nav.export": "导出", "nav.api_mode": "API 模式",
+      "api.configured": "已配置 API", "api.same_origin": "同源", "properties.title": "属性", "properties.title_upper": "属性",
+      "model.selection": "模型选择", "model.server_model": "服务端模型", "model.loading": "正在加载模型…", "model.empty": "没有可用的服务端模型。",
+      "model.metadata": "元数据", "model.none": "尚未选择模型", "validation.summary": "验证摘要", "validation.empty": "请选择带有验证元数据的模型。",
+      "prediction.input_condition": "输入工况", "prediction.condition_note": "数值由服务端模型校验。", "condition.height": "高度 h", "condition.velocity": "速度 v", "condition.angle": "角度 θ",
+      "batch.title": "批量预测", "batch.note": "上传 CSV 到服务端队列。文件路径不会离开当前浏览器。", "batch.csv_file": "CSV 文件",
+      "aim.title": "瞄准优化", "aim.note": "使用当前预测结果。", "aim.spread_model": "散布模型", "aim.reliability": "可信度",
+      "history.title": "执行历史", "history.note": "来自已配置服务端数据库的追溯记录。", "history.loading": "正在加载历史记录…", "history.id": "编号", "history.type": "类型", "history.status": "状态", "history.created": "创建时间",
+      "export.title": "结果导出", "export.note": "下载文件由服务端根据已保存结果生成。", "export.empty": "运行预测后可导出结果。",
+      "viewport.visualization": "可视化", "viewport.kicker": "视口 / 结果", "viewport.title": "毁伤场 — 单工况预测", "viewport.subtitle": "运行预测以加载服务端生成的毁伤场。",
+      "viewport.server_png": "服务端 PNG", "viewport.loading": "正在加载结果…", "viewport.empty_code": "视口为空", "viewport.empty_text": "运行预测以查看结果。", "viewport.image_alt": "服务端生成的毁伤场",
+      "result.no_result": "暂无结果", "result.no_run": "暂无运行", "results.title": "结果", "results.title_upper": "结果", "results.empty": "预测值将在此显示。",
+      "results.field_summary": "场摘要", "results.confidence_ood": "可信度 / OOD", "results.run_information": "运行信息", "results.advice": "建议", "results.aim_summary": "瞄准优化摘要",
+      "results.aim_note": "摘要由服务端返回，未提供独立的瞄准优化图像接口。", "results.batch_summary": "批量摘要",
+      "label.model_id": "模型 ID", "label.type": "类型", "label.damage_level": "毁伤等级", "label.training_samples": "训练样本数", "label.active": "当前使用",
+      "label.mean_relative_error": "平均相对误差", "label.p95_hybrid_error": "P95 混合误差", "label.train_time": "训练耗时", "label.validation_mode": "验证方式", "label.model_type": "模型类型",
+      "label.app_version": "应用版本", "label.created_at": "创建时间", "label.schema_version": "Schema 版本", "label.model_format_version": "模型格式", "label.training_data_hash": "训练数据指纹", "label.code_commit": "代码提交",
+      "label.peak_intensity": "峰值强度", "label.damaged_area": "毁伤面积", "label.metrics": "指标", "label.confidence": "可信度", "label.ood_level": "OOD 等级", "label.distance": "距离", "label.extrapolation": "外推",
+      "label.in_hull": "位于凸包内", "label.local_support": "局部支撑", "label.ood": "OOD", "label.run_id": "运行 ID", "label.model": "模型", "label.elapsed": "耗时", "label.truth_available": "真值可用", "label.focus_damage": "重点毁伤", "label.scope": "范围", "label.ood_note": "OOD 说明",
+      "label.best_x": "最优 x", "label.best_y": "最优 y", "label.vmax": "Vmax", "label.relative_gain": "相对增益", "label.shift_distance": "偏移距离", "label.sigma": "σx / σy", "label.rho": "ρ", "label.field_shape": "场形状", "label.name": "名称", "label.size": "大小", "label.file_type": "类型",
+      "label.state": "状态", "label.completed": "已完成", "label.successful_rows": "成功行数", "label.failed_rows": "失败行数", "label.duration": "耗时", "label.row_errors": "行错误数",
+      "common.yes": "是", "common.no": "否", "common.available": "可用", "common.not_available": "本次运行无此数据", "common.unknown": "未知", "common.records": "条记录", "common.record": "条记录", "common.unavailable": "不可用",
+      "history.kind_prediction": "预测", "history.kind_aim": "瞄准优化", "history.kind_batch": "批量预测",
+      "history.status_pending": "排队中", "history.status_running": "运行中", "history.status_succeeded": "成功",
+      "history.status_failed": "失败", "history.status_cancelled": "已取消",
+      "model.validation": "验证：{{label}}", "model.none_status": "尚未选择模型", "validation.select_model": "请选择带有验证元数据的模型。", "message.select_model": "请先选择可用的服务端模型。",
+      "message.enter_condition": "请输入 h、v、θ 的有限数值。", "message.run_prediction_first": "请先运行预测，再执行瞄准优化。", "message.enter_reliability": "请输入有限的可信度数值。",
+      "message.enter_cep": "当前散布模型需要输入 CEP。", "message.enter_rep_dep": "当前散布模型需要同时输入 REP 和 DEP。", "message.select_model_file": "请先选择服务端模型和 CSV 文件。",
+      "batch.progress": "批量 · {{completed}} / {{total}} · {{percent}}%", "batch.rows": "{{completed}} / {{total}} 行", "batch.queued": "排队中", "batch.failed": "失败", "batch.succeeded": "成功", "batch.cancelled": "已取消",
+      "ood.not_available": "不可用", "history.none": "没有返回追溯记录。", "history.count_one": "1 条记录", "history.count_many": "{{count}} 条记录", "result.no_browser": "没有可用的浏览器结果", "result.unsupported": "不支持的历史记录类型", "export.run_prediction": "运行预测后可导出结果。",
+      "ood.high_label": "高（插值区域）", "ood.medium_label": "中（稀疏支撑区域）", "ood.low_label": "低（外推区域）",
+      "ood.geometry_edge": "位于训练数据覆盖边缘", "ood.geometry_hull": "位于训练工况全局凸包之外", "ood.geometry_local_hole": "位于全局凸包内的局部数据空洞", "advice.current_condition": "当前工况",
+      "batch.stage_queued": "排队中", "batch.stage_complete": "已完成", "batch.stage_failed": "失败", "batch.stage_cancelled": "开始前已取消",
+    },
+  };
+
+  function t(key, values = {}) {
+    const text = TRANSLATIONS[state.language]?.[key] || TRANSLATIONS.en[key] || key;
+    return text.replace(/\{\{(\w+)\}\}/g, (_match, name) => String(values[name] ?? ""));
+  }
+
+  function rememberLanguage(language) {
+    try { window.localStorage.setItem("damagelab-language", language); } catch (_error) { /* best effort */ }
+  }
 
   class ApiError extends Error {
     constructor(message, status = 0) {
@@ -45,7 +211,7 @@
       try {
         response = await fetch(this.resolve(path), { ...options, headers });
       } catch (_error) {
-        throw new ApiError("API unavailable");
+        throw new ApiError(t("status.api_unavailable"));
       }
 
       const text = await response.text();
@@ -96,6 +262,7 @@
   const elements = {
     serverStatus: $("server-status"),
     serverVersion: $("server-version"),
+    language: $("language-select"),
     refresh: $("refresh-button"),
     toolbarModel: $("toolbar-model"),
     toolbarRun: $("toolbar-run"),
@@ -165,6 +332,28 @@
     statusDetail: $("status-detail"),
   };
 
+  function applyStaticLanguage() {
+    document.documentElement.lang = state.language === "zh" ? "zh-CN" : "en";
+    document.title = t("brand.title");
+    document.querySelectorAll("[data-i18n]").forEach((element) => {
+      element.textContent = t(element.dataset.i18n);
+    });
+    document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
+      element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
+    });
+    document.querySelectorAll("[data-i18n-alt]").forEach((element) => {
+      element.setAttribute("alt", t(element.dataset.i18nAlt));
+    });
+    elements.language.value = state.language;
+  }
+
+  function setLanguage(language) {
+    if ((language !== "zh" && language !== "en") || language === state.language) return;
+    state.language = language;
+    rememberLanguage(language);
+    applyLanguage();
+  }
+
   function setText(element, value) {
     element.textContent = value === null || value === undefined || value === "" ? "—" : String(value);
   }
@@ -172,7 +361,8 @@
   function formatNumber(value, digits = 3) {
     const number = Number(value);
     if (!Number.isFinite(number)) return "—";
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(number);
+    const locale = state.language === "zh" ? "zh-CN" : "en-US";
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(number);
   }
 
   function formatPercent(value, digits = 2) {
@@ -182,7 +372,8 @@
 
   function formatDate(value) {
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? String(value || "—") : date.toLocaleString();
+    const locale = state.language === "zh" ? "zh-CN" : "en-US";
+    return Number.isNaN(date.getTime()) ? String(value || "—") : date.toLocaleString(locale);
   }
 
   function shortId(value) {
@@ -192,36 +383,56 @@
 
   function humanLabel(key) {
     const known = {
-      MeanRelativeError: "Mean relative error",
-      P95HybridError: "P95 hybrid error",
-      mean_relative_error: "Mean relative error",
-      p95_hybrid_error: "P95 hybrid error",
-      train_time_seconds: "Train time",
-      validation_mode: "Validation mode",
-      model_type: "Model type",
-      damage_level: "Damage level",
-      training_samples: "Training samples",
-      app_version: "App version",
-      created_at: "Created",
-      schema_version: "Schema version",
-      model_format_version: "Model format",
-      training_data_hash: "Training data hash",
-      code_commit: "Code commit",
+      MeanRelativeError: "label.mean_relative_error",
+      P95HybridError: "label.p95_hybrid_error",
+      mean_relative_error: "label.mean_relative_error",
+      p95_hybrid_error: "label.p95_hybrid_error",
+      train_time_seconds: "label.train_time",
+      validation_mode: "label.validation_mode",
+      model_type: "label.model_type",
+      damage_level: "label.damage_level",
+      training_samples: "label.training_samples",
+      app_version: "label.app_version",
+      created_at: "label.created_at",
+      schema_version: "label.schema_version",
+      model_format_version: "label.model_format_version",
+      training_data_hash: "label.training_data_hash",
+      code_commit: "label.code_commit",
     };
-    return known[key] || String(key).replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+    return known[key] ? t(known[key]) : String(key).replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
   }
 
   function formatValue(value, key = "") {
     if (value === null || value === undefined || value === "") return "—";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "boolean") return value ? t("common.yes") : t("common.no");
     if (typeof value === "number") {
       if (key.toLowerCase().includes("time") && key.toLowerCase().includes("second")) return `${formatNumber(value)} s`;
       if (key.toLowerCase().includes("error") || key.toLowerCase().includes("relative")) return formatPercent(value);
       return formatNumber(value);
     }
     if (Array.isArray(value)) return value.join(" × ");
-    if (typeof value === "object") return "Available";
+    if (typeof value === "object") return t("common.available");
     return String(value);
+  }
+
+  function localizeServerText(value) {
+    const keys = {
+      "高（插值区域）": "ood.high_label",
+      "High Confidence": "ood.high_label",
+      "High confidence": "ood.high_label",
+      "中（稀疏支撑区域）": "ood.medium_label",
+      "Medium Confidence": "ood.medium_label",
+      "Medium confidence": "ood.medium_label",
+      "低（外推区域）": "ood.low_label",
+      "Low Confidence": "ood.low_label",
+      "Low confidence": "ood.low_label",
+      "训练数据覆盖边缘": "ood.geometry_edge",
+      "训练工况全局凸包之外": "ood.geometry_hull",
+      "全局凸包内的局部数据空洞": "ood.geometry_local_hole",
+      "当前工况": "advice.current_condition",
+    };
+    const key = keys[String(value)];
+    return key ? t(key) : (value || "—");
   }
 
   function renderPropertyList(element, entries) {
@@ -237,10 +448,27 @@
     }
   }
 
-  function setStatus(message, detail = "", kind = "neutral") {
+  function setStatus(
+    message,
+    detail = "",
+    kind = "neutral",
+    statusKey = null,
+    statusValues = {},
+    detailKey = null,
+    detailValues = {},
+  ) {
+    state.status = statusKey ? { statusKey, statusValues, detail, detailKey, detailValues, kind } : null;
     setText(elements.statusMessage, message);
     elements.statusDetail.textContent = detail || "";
-    elements.statusIndicator.className = `status-dot status-dot-${kind === "ok" ? "ok" : kind === "running" ? "running" : kind === "error" ? "error" : "neutral"}`;
+    elements.statusIndicator.className = `status-dot status-dot-${statusClass(kind)}`;
+  }
+
+  function statusClass(kind) {
+    return kind === "ok" ? "ok" : kind === "running" ? "running" : kind === "error" ? "error" : "neutral";
+  }
+
+  function setLocalizedStatus(key, values = {}, detail = "", kind = "neutral", detailKey = null, detailValues = {}) {
+    setStatus(t(key, values), detailKey ? t(detailKey, detailValues) : detail, kind, key, values, detailKey, detailValues);
   }
 
   function showFormMessage(element, message = "") {
@@ -250,8 +478,38 @@
 
   function setServerState(online, message = "") {
     elements.serverStatus.className = `status-text ${online ? "status-good" : "status-error"}`;
-    elements.serverStatus.textContent = online ? "Online" : "API unavailable";
-    if (message) setStatus(message, "", "error");
+    elements.serverStatus.textContent = online ? t("status.online") : t("status.api_unavailable");
+    if (!online) setLocalizedStatus("status.api_unavailable", {}, message, "error");
+  }
+
+  function applyLanguage() {
+    applyStaticLanguage();
+    setText(elements.navApiMode, api.baseUrl ? t("api.configured") : t("api.same_origin"));
+    renderModels();
+    renderModelDetails(state.selectedModel);
+    renderValidation(state.selectedModel);
+    renderViewport(state.prediction);
+    renderResults(state.prediction);
+    renderExport(state.prediction);
+    renderBatchFile(state.batchFile);
+    renderBatchJob(state.batchJob);
+    if (!state.prediction) renderBatchResult(state.batchResult);
+    renderHistory({
+      items: state.history,
+      total: state.historyTotal,
+      offset: state.historyOffset,
+      limit: state.historyLimit,
+    });
+    elements.propertiesContext.textContent = t(`nav.${state.activePanel}`).toUpperCase();
+    if (state.status?.statusKey) {
+      const status = state.status;
+      setText(elements.statusMessage, t(status.statusKey, status.statusValues));
+      elements.statusDetail.textContent = status.detailKey
+        ? t(status.detailKey, status.detailValues)
+        : status.detail || "";
+      elements.statusIndicator.className = `status-dot status-dot-${statusClass(status.kind)}`;
+    }
+    updateControlState();
   }
 
   function readNumber(id) {
@@ -285,11 +543,11 @@
     const metadata = model && model.metadata && typeof model.metadata === "object" ? model.metadata : {};
     const active = Boolean(state.health && state.health.active_model_id === model?.model_id);
     renderPropertyList(elements.modelSummary, [
-      { label: "Model ID", value: model?.model_id || "—" },
-      { label: "Type", value: model?.model_type || "—" },
-      { label: "Damage level", value: model?.damage_level || "—" },
-      { label: "Training samples", value: formatValue(model?.training_samples, "training_samples") },
-      { label: "Active", value: active ? "Yes" : "No", className: active ? "status-good" : "" },
+      { label: t("label.model_id"), value: model?.model_id || "—" },
+      { label: t("label.type"), value: model?.model_type || "—" },
+      { label: t("label.damage_level"), value: model?.damage_level || "—" },
+      { label: t("label.training_samples"), value: formatValue(model?.training_samples, "training_samples") },
+      { label: t("label.active"), value: active ? t("common.yes") : t("common.no"), className: active ? "status-good" : "" },
     ]);
 
     const metadataEntries = [
@@ -325,7 +583,7 @@
     elements.modelSelect.hidden = state.models.length === 0;
     if (!state.models.length) {
       state.selectedModel = null;
-      setText(elements.toolbarModel, "No model selected");
+      setText(elements.toolbarModel, t("model.none"));
       renderModelDetails(null);
       renderValidation(null);
       updateControlState();
@@ -350,7 +608,7 @@
       renderModelDetails(model);
       renderValidation(model);
       updateControlState();
-      if (!quiet) setStatus(`Model selected · ${model.model_id}`, "", "ok");
+      if (!quiet) setLocalizedStatus("status.model_selected", { id: model.model_id }, "", "ok");
     } catch (error) {
       state.selectedModel = null;
       updateControlState();
@@ -368,9 +626,9 @@
 
   function renderViewport(prediction) {
     if (!prediction) {
-      elements.viewportSubtitle.textContent = "Run a prediction to load the server-rendered damage field.";
+      elements.viewportSubtitle.textContent = t("viewport.subtitle");
       elements.viewportBadge.className = "result-badge";
-      elements.viewportBadge.textContent = "NO RESULT";
+      elements.viewportBadge.textContent = t("result.no_result");
       elements.viewportDownload.href = "#";
       elements.viewportDownload.classList.add("is-disabled");
       elements.viewportEmpty.hidden = false;
@@ -380,7 +638,7 @@
     const condition = prediction.condition;
     elements.viewportSubtitle.textContent = `h = ${formatNumber(condition.h)} mm · v = ${formatNumber(condition.v)} m/s · θ = ${formatNumber(condition.deg)}°`;
     elements.viewportBadge.className = "result-badge is-ready";
-    elements.viewportBadge.textContent = "RESULT READY";
+    elements.viewportBadge.textContent = t("status.result_ready");
     elements.viewportDownload.href = api.link(prediction.links.png);
     elements.viewportDownload.classList.remove("is-disabled");
   }
@@ -390,7 +648,7 @@
     if (hasPrediction) renderBatchResult(null);
     elements.resultsEmpty.hidden = hasPrediction;
     elements.resultsContent.hidden = !hasPrediction;
-    setText(elements.resultsRun, prediction ? shortId(prediction.run_id) : "NO RUN");
+    setText(elements.resultsRun, prediction ? shortId(prediction.run_id) : t("result.no_run"));
     if (!prediction) {
       renderPropertyList(elements.fieldSummary, []);
       renderPropertyList(elements.resultValidation, []);
@@ -402,41 +660,41 @@
     }
 
     renderPropertyList(elements.fieldSummary, [
-      { label: "Peak intensity", value: formatNumber(prediction.peak_intensity) },
-      { label: "Damaged area", value: formatPercent(prediction.damage_area_ratio) },
+      { label: t("label.peak_intensity"), value: formatNumber(prediction.peak_intensity) },
+      { label: t("label.damaged_area"), value: formatPercent(prediction.damage_area_ratio) },
     ]);
 
     const metrics = prediction.metrics && typeof prediction.metrics === "object" ? prediction.metrics : null;
     const validationEntries = metrics
       ? Object.entries(metrics).map(([key, value]) => ({ label: humanLabel(key), value: formatValue(value, key) }))
-      : [{ label: "Metrics", value: "Not available for this run" }];
+      : [{ label: t("label.metrics"), value: t("common.not_available") }];
     renderPropertyList(elements.resultValidation, validationEntries);
 
     const ood = prediction.ood;
     renderPropertyList(elements.resultOod, ood ? [
-      { label: "Confidence", value: prediction.confidence || "—" },
-      { label: "OOD level", value: ood.level_label || ood.level, className: ood.is_extrapolation ? "status-warn" : "status-good" },
-      { label: "Distance", value: formatNumber(ood.distance) },
-      { label: "Extrapolation", value: ood.is_extrapolation ? "Yes" : "No", className: ood.is_extrapolation ? "status-warn" : "status-good" },
-      { label: "In hull", value: ood.in_hull === null ? "—" : (ood.in_hull ? "Yes" : "No") },
-      { label: "Local support", value: ood.local_support === null ? "—" : (ood.local_support ? "Yes" : "No") },
+      { label: t("label.confidence"), value: localizeServerText(prediction.confidence) },
+      { label: t("label.ood_level"), value: localizeServerText(ood.level_label || ood.level), className: ood.is_extrapolation ? "status-warn" : "status-good" },
+      { label: t("label.distance"), value: formatNumber(ood.distance) },
+      { label: t("label.extrapolation"), value: ood.is_extrapolation ? t("common.yes") : t("common.no"), className: ood.is_extrapolation ? "status-warn" : "status-good" },
+      { label: t("label.in_hull"), value: ood.in_hull === null ? "—" : (ood.in_hull ? t("common.yes") : t("common.no")) },
+      { label: t("label.local_support"), value: ood.local_support === null ? "—" : (ood.local_support ? t("common.yes") : t("common.no")) },
     ] : [
-      { label: "Confidence", value: prediction.confidence || "—" },
-      { label: "OOD", value: "Not available" },
+      { label: t("label.confidence"), value: localizeServerText(prediction.confidence) },
+      { label: t("label.ood"), value: t("ood.not_available") },
     ]);
 
     renderPropertyList(elements.runSummary, [
-      { label: "Run ID", value: prediction.run_id },
-      { label: "Model", value: prediction.model?.model_id || "—" },
-      { label: "Elapsed", value: `${formatNumber(prediction.elapsed_ms, 0)} ms` },
+      { label: t("label.run_id"), value: prediction.run_id },
+      { label: t("label.model"), value: prediction.model?.model_id || "—" },
+      { label: t("label.elapsed"), value: `${formatNumber(prediction.elapsed_ms, 0)} ms` },
     ]);
     const advice = prediction.advice || {};
     const adviceEntries = [
-      { label: "Truth available", value: advice.has_truth ? "Yes" : "No" },
-      { label: "Focus damage", value: advice.has_focus_damage ? "Yes" : "No" },
-      { label: "Scope", value: advice.scope || "—" },
+      { label: t("label.truth_available"), value: advice.has_truth ? t("common.yes") : t("common.no") },
+      { label: t("label.focus_damage"), value: advice.has_focus_damage ? t("common.yes") : t("common.no") },
+      { label: t("label.scope"), value: localizeServerText(advice.scope) },
     ];
-    if (advice.ood_geometry_reason) adviceEntries.push({ label: "OOD note", value: advice.ood_geometry_reason });
+    if (advice.ood_geometry_reason) adviceEntries.push({ label: t("label.ood_note"), value: localizeServerText(advice.ood_geometry_reason) });
     renderPropertyList(elements.adviceSummary, adviceEntries);
     renderAimResult(state.aim);
   }
@@ -448,19 +706,46 @@
       return;
     }
     renderPropertyList(elements.aimSummary, [
-      { label: "Best x", value: formatNumber(aim.best_x) },
-      { label: "Best y", value: formatNumber(aim.best_y) },
-      { label: "Vmax", value: formatNumber(aim.vmax) },
-      { label: "Relative gain", value: formatPercent(aim.gain_relative) },
-      { label: "Shift distance", value: formatNumber(aim.shift_distance) },
-      { label: "σx / σy", value: `${formatNumber(aim.sigma_x)} / ${formatNumber(aim.sigma_y)}` },
-      { label: "ρ", value: formatNumber(aim.rho) },
-      { label: "Field shape", value: Array.isArray(aim.value_field_shape) ? aim.value_field_shape.join(" × ") : "—" },
+      { label: t("label.best_x"), value: formatNumber(aim.best_x) },
+      { label: t("label.best_y"), value: formatNumber(aim.best_y) },
+      { label: t("label.vmax"), value: formatNumber(aim.vmax) },
+      { label: t("label.relative_gain"), value: formatPercent(aim.gain_relative) },
+      { label: t("label.shift_distance"), value: formatNumber(aim.shift_distance) },
+      { label: t("label.sigma"), value: `${formatNumber(aim.sigma_x)} / ${formatNumber(aim.sigma_y)}` },
+      { label: t("label.rho"), value: formatNumber(aim.rho) },
+      { label: t("label.field_shape"), value: Array.isArray(aim.value_field_shape) ? aim.value_field_shape.join(" × ") : "—" },
     ]);
   }
 
   function isTerminalJob(job) {
     return Boolean(job && ["SUCCEEDED", "FAILED", "CANCELLED"].includes(job.state));
+  }
+
+  function localizeJobState(stateValue) {
+    const keys = {
+      PENDING: "history.status_pending",
+      QUEUED: "history.status_pending",
+      RUNNING: "history.status_running",
+      SUCCEEDED: "history.status_succeeded",
+      FAILED: "history.status_failed",
+      CANCELLED: "history.status_cancelled",
+    };
+    return keys[stateValue] ? t(keys[stateValue]) : (stateValue || "—");
+  }
+
+  function localizeJobStage(stage) {
+    if (!stage) return "—";
+    const normalized = String(stage).toUpperCase();
+    const stageKeys = {
+      QUEUED: "batch.stage_queued",
+      COMPLETE: "batch.stage_complete",
+      FAILED: "batch.stage_failed",
+      "CANCELLED BEFORE START": "batch.stage_cancelled",
+    };
+    if (stageKeys[normalized]) return t(stageKeys[normalized]);
+    return normalized in {
+      PENDING: true, QUEUED: true, RUNNING: true, SUCCEEDED: true, FAILED: true, CANCELLED: true,
+    } ? localizeJobState(normalized) : stage;
   }
 
   function renderBatchFile(file) {
@@ -469,9 +754,9 @@
       return;
     }
     renderPropertyList(elements.batchFileMeta, [
-      { label: "Name", value: file.name },
-      { label: "Size", value: `${formatNumber(file.size / 1024, 1)} KB` },
-      { label: "Type", value: file.type || "text/csv" },
+      { label: t("label.name"), value: file.name },
+      { label: t("label.size"), value: `${formatNumber(file.size / 1024, 1)} KB` },
+      { label: t("label.file_type"), value: file.type || "text/csv" },
     ]);
   }
 
@@ -483,8 +768,10 @@
     }
     const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
     elements.batchProgressBlock.hidden = false;
-    elements.batchProgressText.textContent = `Batch · ${formatNumber(job.completed, 0)} / ${formatNumber(job.total, 0)} · ${progress}%`;
-    elements.batchProgressStage.textContent = job.stage || job.state;
+    elements.batchProgressText.textContent = t("batch.progress", {
+      completed: formatNumber(job.completed, 0), total: formatNumber(job.total, 0), percent: progress,
+    });
+    elements.batchProgressStage.textContent = localizeJobStage(job.stage || job.state);
     elements.batchProgressFill.style.width = `${progress}%`;
     elements.batchProgressFill.setAttribute("aria-valuenow", String(progress));
     elements.batchDownload.hidden = !job.links?.csv;
@@ -501,12 +788,12 @@
       return;
     }
     renderPropertyList(elements.batchResultSummary, [
-      { label: "State", value: result.state || "—", className: result.state === "SUCCEEDED" ? "status-good" : result.state === "FAILED" ? "status-error" : "status-warn" },
-      { label: "Completed", value: `${formatNumber(summary.completed, 0)} / ${formatNumber(summary.total, 0)}` },
-      { label: "Successful rows", value: formatNumber(summary.success_count, 0) },
-      { label: "Failed rows", value: formatNumber(summary.failed_count, 0), className: summary.failed_count ? "status-warn" : "" },
-      { label: "Duration", value: `${formatNumber(summary.duration_ms, 0)} ms` },
-      { label: "Row errors", value: formatNumber(summary.row_error_count, 0) },
+      { label: t("label.state"), value: localizeJobState(result.state), className: result.state === "SUCCEEDED" ? "status-good" : result.state === "FAILED" ? "status-error" : "status-warn" },
+      { label: t("label.completed"), value: `${formatNumber(summary.completed, 0)} / ${formatNumber(summary.total, 0)}` },
+      { label: t("label.successful_rows"), value: formatNumber(summary.success_count, 0) },
+      { label: t("label.failed_rows"), value: formatNumber(summary.failed_count, 0), className: summary.failed_count ? "status-warn" : "" },
+      { label: t("label.duration"), value: `${formatNumber(summary.duration_ms, 0)} ms` },
+      { label: t("label.row_errors"), value: formatNumber(summary.row_error_count, 0) },
     ]);
     elements.batchResultDownload.hidden = !result.links?.csv;
     if (result.links?.csv) elements.batchResultDownload.href = api.link(result.links.csv);
@@ -521,37 +808,47 @@
     elements.resultImage.onload = () => {
       elements.plotSurface.setAttribute("aria-busy", "false");
       elements.viewportLoading.hidden = true;
-      setStatus(`Prediction complete · ${formatNumber(prediction.elapsed_ms, 0)} ms`, `${prediction.model.model_id} · PNG ready`, "ok");
+      setLocalizedStatus(
+        "status.prediction_complete",
+        { ms: formatNumber(prediction.elapsed_ms, 0) },
+        "",
+        "ok",
+        "status.prediction_png_ready",
+        { id: prediction.model.model_id },
+      );
     };
     elements.resultImage.onerror = () => {
       elements.plotSurface.setAttribute("aria-busy", "false");
       elements.viewportLoading.hidden = true;
-      setStatus("Result image unavailable", "The structured result is still available", "error");
+      setLocalizedStatus("status.result_image_unavailable", {}, "", "error", "status.result_image_detail");
     };
     elements.resultImage.src = api.link(prediction.links.png);
   }
 
-  function setBusy(value, message = "") {
+  function setBusy(value, message = "", statusKey = null) {
     state.busy = value;
     updateControlState();
-    if (value && message) setStatus(message, "", "running");
+    if (value && message) {
+      if (statusKey) setLocalizedStatus(statusKey, {}, "", "running");
+      else setStatus(message, "", "running");
+    }
   }
 
   async function runPrediction(event) {
     event?.preventDefault();
     showFormMessage(elements.predictionMessage);
     if (!state.selectedModel) {
-      showFormMessage(elements.predictionMessage, "Select an available server model first.");
+      showFormMessage(elements.predictionMessage, t("message.select_model"));
       return;
     }
     const h = readNumber("condition-h");
     const v = readNumber("condition-v");
     const deg = readNumber("condition-deg");
     if ([h, v, deg].some((value) => value === null)) {
-      showFormMessage(elements.predictionMessage, "Enter finite values for h, v, and θ.");
+      showFormMessage(elements.predictionMessage, t("message.enter_condition"));
       return;
     }
-    setBusy(true, "Running prediction...");
+    setBusy(true, t("status.running_prediction"), "status.running_prediction");
     try {
       const prediction = await api.predict({ h, v, deg, model_id: state.selectedModel.model_id });
       state.prediction = prediction;
@@ -563,7 +860,7 @@
       showFormMessage(elements.predictionMessage);
     } catch (error) {
       showFormMessage(elements.predictionMessage, error.message);
-      setStatus(error.message, "Prediction request failed", "error");
+      setLocalizedStatus("status.prediction_request_failed", {}, error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -579,7 +876,7 @@
     event?.preventDefault();
     showFormMessage(elements.aimMessage);
     if (!state.prediction) {
-      showFormMessage(elements.aimMessage, "Run a prediction before AIM optimization.");
+      showFormMessage(elements.aimMessage, t("message.run_prediction_first"));
       return;
     }
     const spreadMode = elements.spreadMode.value;
@@ -590,13 +887,13 @@
       kernel_method: "cell_integrated",
     };
     if (payload.reliability === null) {
-      showFormMessage(elements.aimMessage, "Enter a finite reliability value.");
+      showFormMessage(elements.aimMessage, t("message.enter_reliability"));
       return;
     }
     if (spreadMode === "CEP") {
       payload.cep = readNumber("aim-cep");
       if (payload.cep === null) {
-        showFormMessage(elements.aimMessage, "Enter CEP for the selected spread model.");
+        showFormMessage(elements.aimMessage, t("message.enter_cep"));
         return;
       }
     } else {
@@ -605,20 +902,27 @@
       payload.rho = readNumber("aim-rho");
       payload.theta_deg = readNumber("aim-theta");
       if ([payload.rep, payload.dep].some((value) => value === null)) {
-        showFormMessage(elements.aimMessage, "Enter both REP and DEP for the selected spread model.");
+        showFormMessage(elements.aimMessage, t("message.enter_rep_dep"));
         return;
       }
       if (payload.rho === null) payload.rho = 0;
     }
-    setBusy(true, "Running AIM optimization...");
+    setBusy(true, t("status.running_aim"), "status.running_aim");
     try {
       state.aim = await api.aim(payload);
       renderAimResult(state.aim);
-      setStatus("AIM complete", `${state.aim.spread_mode} · summary ready`, "ok");
+      setLocalizedStatus(
+        "status.aim_complete",
+        {},
+        "",
+        "ok",
+        "status.aim_summary_ready",
+        { mode: state.aim.spread_mode },
+      );
       showFormMessage(elements.aimMessage);
     } catch (error) {
       showFormMessage(elements.aimMessage, error.message);
-      setStatus(error.message, "AIM request failed", "error");
+      setLocalizedStatus("status.aim_request_failed", {}, error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -637,18 +941,39 @@
       renderBatchJob(state.batchJob);
       if (isTerminalJob(state.batchJob)) {
         const result = await api.jobResult(state.batchJob.job_id);
+        state.batchResult = result;
         renderBatchResult(result);
-        setStatus(
-          state.batchJob.state === "SUCCEEDED" ? "Batch complete" : `Batch ${state.batchJob.state.toLowerCase()}`,
-          `${formatNumber(state.batchJob.completed, 0)} / ${formatNumber(state.batchJob.total, 0)} rows`,
+        setLocalizedStatus(
+          state.batchJob.state === "SUCCEEDED" ? "status.batch_complete" : "status.batch_failed",
+          {
+            state: localizeJobState(state.batchJob.state).toLowerCase(),
+            completed: formatNumber(state.batchJob.completed, 0),
+            total: formatNumber(state.batchJob.total, 0),
+          },
+          "",
           state.batchJob.state === "SUCCEEDED" ? "ok" : "error",
+          "status.rows",
+          {
+            completed: formatNumber(state.batchJob.completed, 0),
+            total: formatNumber(state.batchJob.total, 0),
+          },
         );
       } else {
-        setStatus("Batch running...", `${formatNumber(state.batchJob.completed, 0)} / ${formatNumber(state.batchJob.total, 0)} rows`, "running");
+        setLocalizedStatus(
+          "status.batch_running",
+          {},
+          "",
+          "running",
+          "status.rows",
+          {
+            completed: formatNumber(state.batchJob.completed, 0),
+            total: formatNumber(state.batchJob.total, 0),
+          },
+        );
         scheduleBatchPoll();
       }
     } catch (error) {
-      setStatus(error.message, "Batch status request failed", "error");
+      setLocalizedStatus("status.batch_status_failed", {}, error.message, "error");
       scheduleBatchPoll(2000);
     }
   }
@@ -656,20 +981,21 @@
   async function runBatch() {
     showFormMessage(elements.batchMessage);
     if (!state.selectedModel || !state.batchFile) {
-      showFormMessage(elements.batchMessage, "Select a server model and CSV file first.");
+      showFormMessage(elements.batchMessage, t("message.select_model_file"));
       return;
     }
-    setBusy(true, "Submitting batch...");
+    setBusy(true, t("status.submitting_batch"), "status.submitting_batch");
     try {
       state.batchJob = await api.submitBatch(state.batchFile, state.selectedModel.model_id);
+      state.batchResult = null;
       renderBatchJob(state.batchJob);
       renderBatchResult(null);
       showFormMessage(elements.batchMessage);
-      setStatus("Batch queued", `${formatNumber(state.batchJob.total, 0)} rows`, "running");
+      setLocalizedStatus("status.batch_queued", {}, "", "running", "status.row_count", { count: formatNumber(state.batchJob.total, 0) });
       scheduleBatchPoll(250);
     } catch (error) {
       showFormMessage(elements.batchMessage, error.message);
-      setStatus(error.message, "Batch submission failed", "error");
+      setLocalizedStatus("status.batch_submission_failed", {}, error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -680,15 +1006,16 @@
     try {
       state.batchJob = await api.cancelJob(state.batchJob.job_id);
       renderBatchJob(state.batchJob);
-      setStatus("Cancelling batch...", "Cancellation is cooperative", "running");
+      setLocalizedStatus("status.cancelling_batch", {}, "", "running", "status.batch_cancellation_cooperative");
       if (isTerminalJob(state.batchJob)) {
-        renderBatchResult(await api.jobResult(state.batchJob.job_id));
+        state.batchResult = await api.jobResult(state.batchJob.job_id);
+        renderBatchResult(state.batchResult);
       } else {
         scheduleBatchPoll(250);
       }
     } catch (error) {
       showFormMessage(elements.batchMessage, error.message);
-      setStatus(error.message, "Batch cancellation failed", "error");
+      setLocalizedStatus("status.batch_cancellation_failed", {}, error.message, "error");
     }
   }
 
@@ -701,7 +1028,7 @@
     if (!enabled) return;
     elements.exportSummary.append(...(() => {
       const dl = document.createElement("dt");
-      dl.textContent = "Run ID";
+      dl.textContent = t("label.run_id");
       const dd = document.createElement("dd");
       dd.textContent = prediction.run_id;
       return [dl, dd];
@@ -710,18 +1037,29 @@
     elements.exportCsv.href = api.link(prediction.links.csv);
   }
 
+  function localizeHistoryKind(kind) {
+    const keys = {
+      prediction: "history.kind_prediction",
+      aim: "history.kind_aim",
+      batch_prediction: "history.kind_batch",
+    };
+    return keys[kind] ? t(keys[kind]) : (kind || "—");
+  }
+
   function renderHistory(body) {
     state.history = Array.isArray(body?.items) ? body.items : [];
     state.historyTotal = Number(body?.total || 0);
     state.historyOffset = Number(body?.offset || 0);
     state.historyLimit = Number(body?.limit || state.historyLimit);
-    elements.historyCount.textContent = `${state.historyTotal} record${state.historyTotal === 1 ? "" : "s"}`;
+    elements.historyCount.textContent = state.historyTotal === 1
+      ? t("history.count_one")
+      : t("history.count_many", { count: formatNumber(state.historyTotal, 0) });
     elements.historyBody.replaceChildren();
     for (const item of state.history) {
       const row = document.createElement("tr");
       row.tabIndex = 0;
       row.dataset.historyId = item.id;
-      for (const value of [shortId(item.id), item.kind || "—", item.status || "—", formatDate(item.created_at)]) {
+      for (const value of [shortId(item.id), localizeHistoryKind(item.kind), localizeJobState(item.status), formatDate(item.created_at)]) {
         const cell = document.createElement("td");
         cell.textContent = value;
         row.append(cell);
@@ -734,7 +1072,7 @@
     }
     const hasRows = state.history.length > 0;
     elements.historyState.hidden = hasRows;
-    elements.historyState.textContent = hasRows ? "" : "No traceability records returned.";
+    elements.historyState.textContent = hasRows ? "" : t("history.none");
     elements.historyTable.hidden = !hasRows;
     elements.historyPrev.disabled = state.historyOffset <= 0;
     elements.historyNext.disabled = state.historyOffset + state.history.length >= state.historyTotal;
@@ -742,7 +1080,7 @@
 
   async function refreshHistory() {
     elements.historyState.hidden = false;
-    elements.historyState.textContent = "Loading history...";
+    elements.historyState.textContent = t("history.loading");
     try {
       const body = await api.history(state.historyLimit, state.historyOffset);
       renderHistory(body);
@@ -750,13 +1088,13 @@
       elements.historyTable.hidden = true;
       elements.historyState.hidden = false;
       elements.historyState.textContent = error.message;
-      setStatus(error.message, "History request failed", "error");
+      setLocalizedStatus("status.history_request_failed", {}, error.message, "error");
     }
   }
 
   async function openHistoryResult(item) {
     const runId = item.id;
-    setStatus("Loading result...", shortId(runId), "running");
+    setLocalizedStatus("status.loading_result", {}, shortId(runId), "running");
     try {
       if (item.kind === "prediction") {
         const prediction = await api.result(runId);
@@ -780,13 +1118,14 @@
       } else if (item.kind === "batch_prediction") {
         state.batchJob = await api.job(runId);
         renderBatchJob(state.batchJob);
-        renderBatchResult(await api.jobResult(runId));
+        state.batchResult = await api.jobResult(runId);
+        renderBatchResult(state.batchResult);
         setActivePanel("batch");
       } else {
-        setStatus("No browser result attached", `${shortId(runId)} · unsupported history type`, "neutral");
+        setLocalizedStatus("status.no_browser_result", {}, shortId(runId), "neutral", "status.unsupported_history", { id: shortId(runId) });
       }
     } catch (error) {
-      setStatus("No browser result attached", `${shortId(runId)} · ${error.message}`, "neutral");
+      setLocalizedStatus("status.no_browser_result", {}, `${shortId(runId)} · ${error.message}`, "neutral");
     }
   }
 
@@ -798,18 +1137,18 @@
     document.querySelectorAll(".nav-item").forEach((item) => {
       item.classList.toggle("is-active", item.dataset.panel === panel);
     });
-    setText(elements.propertiesContext, panel.replaceAll("-", " ").toUpperCase());
+    setText(elements.propertiesContext, t(`nav.${panel}`).toUpperCase());
     if (panel === "history") refreshHistory();
   }
 
   async function refreshAll() {
-    setStatus("Checking API...", "", "running");
+    setLocalizedStatus("status.checking_api", {}, "", "running");
     try {
       state.health = await api.health();
       renderHealth();
     } catch (error) {
       state.health = null;
-      setServerState(false, "API unavailable");
+      setServerState(false);
       setText(elements.serverVersion, "—");
       state.models = [];
       renderModels();
@@ -817,8 +1156,14 @@
     }
     try {
       await refreshModels();
-      if (state.models.length) setStatus(`Ready · ${state.models.length} model${state.models.length === 1 ? "" : "s"}`, "", "ok");
-      else setStatus("Ready · no server models", "", "neutral");
+      if (state.models.length) {
+        setLocalizedStatus(
+          "status.ready_models",
+          { count: formatNumber(state.models.length, 0), suffix: state.models.length === 1 ? "" : "s" },
+          "",
+          "ok",
+        );
+      } else setLocalizedStatus("status.ready_no_models");
     } catch (error) {
       state.models = [];
       renderModels();
@@ -829,6 +1174,7 @@
 
   function bindEvents() {
     elements.refresh.addEventListener("click", refreshAll);
+    elements.language.addEventListener("change", () => setLanguage(elements.language.value));
     elements.modelSelect.addEventListener("change", () => selectModel(selectedModelId()));
     elements.predictionForm.addEventListener("submit", runPrediction);
     elements.toolbarRun.addEventListener("click", () => runPrediction());
@@ -870,8 +1216,8 @@
     updateControlState();
   }
 
+  applyLanguage();
   bindEvents();
   app.dataset.ready = "true";
-  setText(elements.navApiMode, api.baseUrl ? "CONFIGURED API" : "SAME-ORIGIN");
   refreshAll();
 })();

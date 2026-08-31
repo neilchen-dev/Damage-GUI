@@ -75,6 +75,8 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("DamageLab", page.text)
         self.assertIn("/static/app.js", page.text)
+        self.assertIn("language-select", page.text)
+        self.assertIn("data-i18n=\"brand.subtitle\"", page.text)
         css = self.client.get("/static/styles.css")
         javascript = self.client.get("/static/app.js")
         self.assertEqual(css.status_code, 200)
@@ -87,6 +89,9 @@ class WebApiTests(unittest.TestCase):
             self.assertIn(route, javascript.text)
         self.assertIn("prediction.links.png", javascript.text)
         self.assertIn("prediction.links.csv", javascript.text)
+        self.assertIn("const TRANSLATIONS", javascript.text)
+        self.assertIn("damagelab-language", javascript.text)
+        self.assertIn("function setLanguage", javascript.text)
         self.assertNotIn("impact_tests_2026A", javascript.text)
 
     def test_disk_model_discovery_is_metadata_only_and_loader_is_cached(self) -> None:

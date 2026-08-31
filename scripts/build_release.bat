@@ -7,7 +7,12 @@ cd /d "%~dp0.."
 
 set "VERSION=v2.1.0"
 set "APP_NAME=Damage-GUI-%VERSION%-win64"
-set "OUTPUT_DIR=release\%APP_NAME%"
+set "PROJECT_ROOT=%CD%"
+set "SOURCE_DIR=%PROJECT_ROOT%\src"
+set "ICON_DIR=%SOURCE_DIR%\damage_gui\gui\assets"
+set "DIST_DIR=%PROJECT_ROOT%\release"
+set "WORK_DIR=%PROJECT_ROOT%\build\release"
+set "OUTPUT_DIR=%DIST_DIR%\%APP_NAME%"
 
 echo Building %APP_NAME% ...
 pyinstaller ^
@@ -16,14 +21,14 @@ pyinstaller ^
   --windowed ^
   --onedir ^
   --name "%APP_NAME%" ^
-  --icon "src\damage_gui\gui\assets\damagelab-icon.ico" ^
-  --add-data "src\damage_gui\gui\assets\damagelab-icon.ico;damage_gui\gui\assets" ^
-  --add-data "src\damage_gui\gui\assets\damagelab-icon.png;damage_gui\gui\assets" ^
-  --paths "src" ^
-  --distpath "release" ^
-  --workpath "build\release" ^
-  --specpath "build\release" ^
-  "src\damage_gui\desktop.py"
+  --icon "%ICON_DIR%\damagelab-icon.ico" ^
+  --add-data "%ICON_DIR%\damagelab-icon.ico;damage_gui\gui\assets" ^
+  --add-data "%ICON_DIR%\damagelab-icon.png;damage_gui\gui\assets" ^
+  --paths "%SOURCE_DIR%" ^
+  --distpath "%DIST_DIR%" ^
+  --workpath "%WORK_DIR%" ^
+  --specpath "%WORK_DIR%" ^
+  "%SOURCE_DIR%\damage_gui\desktop.py"
 
 if errorlevel 1 exit /b 1
 

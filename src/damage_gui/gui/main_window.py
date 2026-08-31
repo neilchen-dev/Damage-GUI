@@ -344,15 +344,22 @@ class DamagePredictionGUI:
         for button in (
             self.model_panel.train_button,
             self.model_panel.load_button,
-            self.model_panel.save_button,
-            self.prediction_panel.predict_button,
-            self.batch_panel.run_button,
-            self.aim_panel.optimize_button,
             self.workbench.open_button,
-            self.workbench.save_button,
-            self.workbench.run_button,
         ):
             button.configure(state=action_state)
+
+        model_state = "normal" if not active and self.bundle is not None else "disabled"
+        prediction_state = model_state
+        aim_state = "normal" if not active and self.current_prediction is not None else "disabled"
+        for button in (self.model_panel.save_button, self.workbench.save_button):
+            button.configure(state=model_state)
+        for button in (
+            self.prediction_panel.predict_button,
+            self.workbench.run_button,
+            self.batch_panel.run_button,
+        ):
+            button.configure(state=prediction_state)
+        self.aim_panel.optimize_button.configure(state=aim_state)
         self.model_panel.cancel_button.configure(
             state="normal" if self._task_is_busy("training") else "disabled"
         )
@@ -767,6 +774,7 @@ class DamagePredictionGUI:
             self._update_key_metrics(mean_re, p95_hybrid)
             self._update_model_status()
             self._update_advice_card(mean_re, p95_hybrid, "测试集")
+            self._set_busy(False)
             legacy_note = (
                 ""
                 if getattr(bundle, "metadata", None) is not None

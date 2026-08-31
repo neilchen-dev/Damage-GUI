@@ -6,7 +6,7 @@
 
 DamageLab is an engineering workbench for fast reconstruction and assessment of two-dimensional damage fields from simulated flight or impact conditions. Given `(h, v, deg)` and a damage level (`F`, `M`, or `P`), it predicts a continuous `473 × 473` field instead of a single scalar value.
 
-The project provides a Windows desktop GUI, a command-line interface, and an optional FastAPI service. The desktop application supports live Chinese / English switching; language changes affect presentation only and never alter model files, CSV/SQLite formats, or scientific results.
+The project provides a Windows desktop GUI, a command-line interface, and an optional FastAPI service. The desktop and Web workbenches support live Chinese / English switching through their language selectors; language changes affect presentation only and never alter model files, CSV/SQLite formats, or scientific results.
 
 **Research positioning:** Centroid-Aligned POD-RBF Surrogate Model for Fast Reconstruction and Assessment of High-Dimensional Damage Fields.
 
