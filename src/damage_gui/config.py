@@ -134,7 +134,7 @@ class Config:
 
 
 CONFIG = Config()
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 APP_TITLE = "基于数据驱动的毁伤效能快速评估方法研究"
 
 # 毁伤强度：单色调科学渐变，浅色=未毁伤，深蓝=完全毁伤（对色弱友好，无廉价感）

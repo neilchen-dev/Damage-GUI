@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "damage-gui"
-version = "2.1.0"
+version = "2.2.0"
 description = "基于质心对齐 POD-RBF 降阶代理模型的二维毁伤场快速预测与效能评估系统"
 readme = "README.md"
 requires-python = ">=3.10"
