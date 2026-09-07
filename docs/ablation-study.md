@@ -11,9 +11,11 @@
 | M | `6763c6ed9e0c68843a02c837265b17da63ec0f675b5502968284d624c22524aa` |
 | P | `13bbd9fdc2d64bf180c6aaac798f854ad564eefa87a0bd4d57e38440a255482a` |
 
-> 口径说明：`(sm)` = Smoothed（双边滤波后）评估口径，`(raw)` = 原始矩阵口径。
+> 口径说明：`(sm)` = Smoothed（双边滤波后）评估口径，`(raw)` = 已完成双边滤波预处理、
+> 但未施加评估阶段高斯平滑的场。
 > `MeanRE` 为主要毁伤区（`damage > 0.05`）平均相对误差，`P95` 为混合误差 95 分位，
-> `R2` 为 ROI 决定系数，`CentroidErr` 为毁伤质心定位误差（米）。全部为验证集折外指标。
+> `R2` 为主要毁伤区（`damage > 0.05`）上的决定系数（**非 ROI 全区域 R²**），
+> `CentroidErr` 为毁伤质心定位误差（米）。全部为验证集折外指标。
 > 本文所有数字直接摘自 `examples/results/experiments/ablation_{level}_{suite}.md`，未做任何修饰。
 
 ---
