@@ -38,7 +38,7 @@ from damage_gui.model.rbf import RBFDamageField  # noqa: E402
 SHAPE = (16, 16)
 TEST_CONFIG = dataclasses.replace(CONFIG, target_shape=SHAPE, eval_smoothing_sigma=1.0)
 ROI = roi_mask_for_shape(SHAPE, TEST_CONFIG)
-FAST = settings(max_examples=30, deadline=None)
+FAST = settings(max_examples=30, deadline=None, derandomize=True)
 
 finite_float = st.floats(allow_nan=False, allow_infinity=False)
 condition_st = st.builds(

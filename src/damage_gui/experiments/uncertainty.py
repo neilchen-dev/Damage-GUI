@@ -72,7 +72,10 @@ class UncertaintyEstimator:
         lo = conditions.min(axis=0)
         hi = conditions.max(axis=0)
         self._lo = lo
-        self._span = np.where(hi > lo, hi - lo, 1.0)
+        # 归一化尺度防护：span 为 denormal/极小值时，归一化会把查询坐标放大到
+        # 1e200+ 量级，norm 平方溢出为 inf。下限只影响归一化尺度本身，不改数据
+        # 与距离定义；真实工况网格（文件名 0.1 量化，span ≥ 0.1）恒为 no-op。
+        self._span = np.where(hi - lo > 1e-12, hi - lo, 1.0)
         self._points = (conditions - self._lo) / self._span
         self.residuals = np.asarray(residuals, dtype=np.float64)
         self.k = k
