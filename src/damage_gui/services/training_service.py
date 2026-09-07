@@ -21,6 +21,8 @@ class TrainingResult:
     mean_relative_error: float | None
     p95_hybrid_error: float | None
     db_recorded: bool
+    raw_mean_relative_error: float | None = None
+    raw_p95_hybrid_error: float | None = None
 
     @property
     def core_metrics(self) -> dict[str, float | None]:
@@ -77,7 +79,16 @@ class TrainingService:
         mean_re, p95_hybrid = extract_core_metrics(
             bundle.accuracy_report, bundle.resolved_config()
         )
-        db_recorded = self._record_training_to_db(bundle, mean_re, p95_hybrid)
+        raw_mean_re, raw_p95_hybrid = (
+            extract_core_metrics(
+                bundle.accuracy_report, bundle.resolved_config(), field="raw"
+            )
+            if "field" in bundle.accuracy_report.columns
+            else (None, None)
+        )
+        db_recorded = self._record_training_to_db(
+            bundle, mean_re, p95_hybrid, raw_mean_re, raw_p95_hybrid
+        )
         return TrainingResult(
             bundle=bundle,
             accuracy_report_path=accuracy_path,
@@ -85,6 +96,8 @@ class TrainingService:
             mean_relative_error=mean_re,
             p95_hybrid_error=p95_hybrid,
             db_recorded=db_recorded,
+            raw_mean_relative_error=raw_mean_re,
+            raw_p95_hybrid_error=raw_p95_hybrid,
         )
 
     def _record_training_to_db(
@@ -92,18 +105,25 @@ class TrainingService:
         bundle: ModelBundle,
         mean_re: float | None,
         p95_hybrid: float | None,
+        raw_mean_re: float | None = None,
+        raw_p95_hybrid: float | None = None,
     ) -> bool:
         """Record training trace; preserve the GUI's best-effort semantics."""
         if bundle.metadata is None:
             return False
         details: dict = {
             "validation_mode": bundle.validation_mode,
+            "primary_field": "smoothed",
             "train_time_seconds": round(bundle.train_time_seconds, 3),
         }
         if mean_re is not None:
             details["mean_relative_error"] = float(mean_re)
         if p95_hybrid is not None:
             details["p95_hybrid_error"] = float(p95_hybrid)
+        if raw_mean_re is not None:
+            details["raw_mean_relative_error"] = float(raw_mean_re)
+        if raw_p95_hybrid is not None:
+            details["raw_p95_hybrid_error"] = float(raw_p95_hybrid)
         job_id = JobRepository(self.db_path).record_training_run(
             bundle.metadata,
             input_source=bundle.data_dir,

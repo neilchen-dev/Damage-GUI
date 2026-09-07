@@ -116,7 +116,7 @@ The server loads models lazily, keeps large matrices out of JSON responses, writ
 
 ## Reproducible validation
 
-The repository includes synthetic-data unit tests, end-to-end service tests, storage and task tests, headless import guards, and numerical regression tests with fixed golden values. Private simulation matrices are intentionally not committed. With local data available, structured validation and study reports can be regenerated with:
+The repository includes 236 synthetic-data unit tests (algorithm, metrics, end-to-end pipelines, storage, task state machine, batch, CLI, and Web API, plus the M3 scientific-validation framework: ablation, baselines, benchmark, uncertainty, tracking, lifecycle, drift, RBF numerical guards, and Hypothesis property tests) as well as numerical regression tests with fixed golden values. Private simulation matrices are intentionally not committed. With local data available, structured validation and study reports can be regenerated with:
 
 ```powershell
 $env:PYTHONPATH = "src"
@@ -130,6 +130,51 @@ Run the test suite and lint checks:
 python -m unittest discover -s tests -v
 ruff check .
 ```
+
+## M3 validation results
+
+The M3 phase closed the scientific-validation loop on the local real simulation matrix
+(`dist/data`, 120 cases per level F/M/P; a full 5-altitude x 4-velocity x 6-angle factorial
+grid): ablation attribution, external baselines, performance benchmarking, per-sample
+uncertainty, experiment tracking, model lifecycle, property-based tests, and drift detection.
+87 experiments (63 core matrix + 24 multiquadric-epsilon supplement) were persisted and recorded in
+`examples/results/experiments/experiments.sqlite3` (seed 42, commit `b6803e2`, per-level
+training-data fingerprints).
+
+**Production model: `pod_rbf` (centroid alignment on, K=20 POD modes, thin-plate-spline
+kernel), out-of-fold metrics under random 80/20 holdout:**
+
+| Model | R²(sm) | Dice | Centroid Error | Inference (warm, per image) |
+|---|---:|---:|---:|---:|
+| pod_rbf · F | 0.9539 | 0.8798 | 0.1838 m | 10.16 ms |
+| pod_rbf · M | 0.9462 | 0.8805 | 0.1857 m | 11.97 ms |
+| pod_rbf · P | 0.4460 | 0.8285 | 0.2177 m | 9.29 ms |
+
+> Inference is the mean latency for a single 473x473 damage field at batch=100 steady state
+> (single-machine measurement); the model artifact is only **2.5 MB**, shippable with the
+> desktop GUI / web app.
+
+**Stated limitations (not glossed over):**
+
+- **P-level R²(sm) is only 0.4460**, and external baselines are equally low (linear 0.3538,
+  nn 0.1159) — this is intrinsic data dispersion at the P level, not an engineering defect;
+  Dice 0.8285 and mean relative error 0.1235 remain usable and must be read together.
+- **Leave-v-out extrapolation at the P level gives R²(sm) = -0.6124 (negative)**, i.e. worse
+  than the mean under that protocol — a hard limitation not to be masked by its low P95.
+- **Simple external baselines are competitive on some metrics**: at F/M, `linear` matches the
+  production R²(sm) and `nn` scores higher Dice/IoU. `pod_rbf` is chosen for the combination
+  of best centroid accuracy + 2.5 MB artifact + continuous parameterization + OOD/uncertainty
+  guards, not for leading any single metric.
+- **pod_rbf training carries ~1e-4-magnitude nondeterminism (known reproducibility risk,
+  deferred to the next release)**: at production data sizes, sklearn PCA selects randomized
+  SVD with an unfixed `random_state`, so two same-config trainings can differ in the fourth
+  decimal place (e.g. the P-level K=20 pair 0.4460/0.4459 in the ablation study). No
+  conclusion in this section is affected; see
+  [M3 acceptance report §7.9](docs/m3-acceptance-report.md).
+
+Full evidence chain: [model validation report](docs/model-validation-report.md) |
+[ablation study](docs/ablation-study.md) | [uncertainty validation](docs/uncertainty-validation.md) |
+[benchmark report](docs/benchmark-report.md) | [M3 acceptance report](docs/m3-acceptance-report.md).
 
 ## Windows build
 

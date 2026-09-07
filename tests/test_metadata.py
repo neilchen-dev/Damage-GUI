@@ -53,6 +53,9 @@ class MetadataBuildTests(unittest.TestCase):
         self.assertEqual(metadata.parameters["validation_mode"], "random")
         self.assertEqual(metadata.validation["method"], "random")
         self.assertIn("mean_relative_error", metadata.validation)
+        # P0-2 双口径：主口径显式标注为 Smoothed，Raw 口径并列记录
+        self.assertEqual(metadata.validation["primary_field"], "smoothed")
+        self.assertIn("raw_mean_relative_error", metadata.validation)
 
     def test_metadata_dict_roundtrip(self) -> None:
         metadata = self.bundle.metadata
@@ -71,6 +74,26 @@ class MetadataBuildTests(unittest.TestCase):
         del data["training_data_hash"]
         with self.assertRaisesRegex(ModelLoadError, "缺少字段"):
             ModelMetadata.from_dict(data)
+
+    def test_summary_lines_show_dual_criteria(self) -> None:
+        metadata = self.bundle.metadata
+        assert metadata is not None
+        lines = metadata.summary_lines()
+        self.assertTrue(any("主口径: Smoothed" in line for line in lines))
+        self.assertTrue(any(line.startswith("Smoothed:") for line in lines))
+        self.assertTrue(any(line.startswith("Raw:") for line in lines))
+
+    def test_summary_lines_legacy_single_criterion(self) -> None:
+        # 旧版元数据无 raw_* 键 → 回退单口径摘要行，保持向后兼容
+        metadata = self.bundle.metadata
+        assert metadata is not None
+        legacy = dataclasses.replace(
+            metadata,
+            validation={"method": "random", "mean_relative_error": 0.05},
+        )
+        lines = legacy.summary_lines()
+        self.assertTrue(any("验证: random，MeanRE" in line for line in lines))
+        self.assertFalse(any(line.startswith("Raw:") for line in lines))
 
 
 class TrainingDataHashTests(unittest.TestCase):

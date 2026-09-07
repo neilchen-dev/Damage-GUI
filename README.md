@@ -71,7 +71,7 @@ Storage / Files               SQLite 追溯库（models / jobs / prediction_resu
 - **可复现的结构化验证**：五种验证模式（随机留出 / 三种整层留出 / 角落外推）+ 固定随机种子。
 - **批量预测**：CSV 输入/输出；行级失败隔离（单行出错不中断批次）；取消保留已完成行；每行输出含模型版本、OOD 可信度、真值对照指标与耗时；GUI 与 CLI 双入口。
 - **统一日志与错误体系**：控制台 + 轮转文件日志；`DamageGuiError` 错误分层，GUI 只展示友好消息，完整 traceback 进日志文件。
-- **自动化测试**：181 个 unittest 用例（算法、指标、端到端管线、存储、任务状态机、批量、CLI、Web API、DPI/无头导入），全合成数据、无私有数据依赖。
+- **自动化测试**：236 个 unittest 用例（算法、指标、端到端管线、存储、任务状态机、批量、CLI、Web API、DPI/无头导入，以及 M3 消融/基线/基准/不确定度/追踪/生命周期/漂移检测框架与 Hypothesis 属性测试），全合成数据、无私有数据依赖。
 - **数值回归测试**：固定种子合成集上的黄金值对比（预测场 / POD 模态 / OOD 分级 / 核心指标）；容差依据双进程实测漂移（=0.0）设定，CI 双平台运行为最终权威；禁止为变绿随意放宽。
 - **Windows/Linux 双平台 CI**：`ruff → 单元+数值回归测试 → Windows PyInstaller 真实构建（校验 exe 产物）→ artifact 上传`；仅 tag 推送才发布 Release。
 - **Windows 桌面交付**：PyInstaller onedir 发布包（`scripts/build_release.bat`，CI 与本地同一路径）。
@@ -179,7 +179,7 @@ SQLite：models ← jobs(training) ← jobs(batch_prediction) ← prediction_res
 │   ├── ablation_study.py      # 消融实验（降噪/对齐/POD 各自的贡献）
 │   ├── validation_study.py    # 五种结构化验证汇总表
 │   └── pod_sweep.py           # POD 模态数 K 扫描与性能对比
-├── tests/                     # 181 个用例（单元 / 端到端 / 数值回归 + 黄金值）
+├── tests/                     # 236 个用例（单元 / 端到端 / 数值回归 + 黄金值 + M3 验证框架）
 ├── docs/                      # 阶段验收报告与简历材料
 ├── .github/workflows/test.yml # CI（lint → 双平台测试 → Windows 构建 → artifact）
 ├── pyproject.toml             # 包元数据、依赖与 ruff 配置
@@ -241,7 +241,7 @@ docker compose up --build
 
 ## 真实示例结果
 
-下图和指标由本机 F 级仿真数据重新生成，采用默认固定随机种子进行 80/20 留出验证。代表性留出工况为 `h=1`、`v=300`、`deg=30`。
+下图和指标由本机 F 级仿真数据重新生成（**M2 期 RBF 模型**产物，随机种子 42、代码 commit `b84b3b4`），采用固定随机种子进行 80/20 留出验证。代表性留出工况为 `h=1`、`v=300`、`deg=30`；**M3 生产模型（pod_rbf）的三级指标见下文 [M3 验证结论](#m3-验证结论)**。
 
 | 评价范围 | RMSE | MAE | R² | 平均相对误差 | P95 混合误差 |
 |---|---:|---:|---:|---:|---:|
@@ -257,6 +257,44 @@ docker compose up --build
 $env:PYTHONPATH = "src"
 python scripts/generate_results.py --data-dir path\to\data --level F
 ```
+
+## M3 验证结论
+
+M3 阶段在本机 `dist/data` 真实仿真矩阵（F/M/P 各 120 工况，5 高度 × 4 速度 × 6 角度
+完整因子网格）上完成了科学验证闭环：消融归因、外部基线对照、性能基准、样本级不确定度、
+实验追踪、模型生命周期、属性测试与漂移检测。共 87 组实验（核心矩阵 63 + multiquadric ε 补跑 24）
+落盘并写入 `examples/results/experiments/experiments.sqlite3`，随机种子 42、代码 commit `b6803e2`、
+按等级独立记录训练数据指纹。
+
+**生产模型：`pod_rbf`（质心对齐 on、POD 模态数 K=20、thin_plate_spline 核），随机 80/20 留出折外指标：**
+
+| Model | R²(sm) | Dice | Centroid Error | Inference（warm，每张图） |
+|---|---:|---:|---:|---:|
+| pod_rbf · F | 0.9539 | 0.8798 | 0.1838 m | 10.16 ms |
+| pod_rbf · M | 0.9462 | 0.8805 | 0.1857 m | 11.97 ms |
+| pod_rbf · P | 0.4460 | 0.8285 | 0.2177 m | 9.29 ms |
+
+> 推理耗时为 batch=100 稳态下的**单张 473×473 毁伤场**平均时延（单机测量）；模型产物仅
+> **2.5 MB**，可随桌面 GUI / Web 一起分发。
+
+**必须如实说明的限制（未做美化）：**
+
+- **P 级 R²(sm) 仅 0.4460**，且外部基线同样低（linear 0.3538、nn 0.1159）——这是 P 级数据
+  内禀离散度所致，非工程缺陷；此时 Dice 0.8285、平均相对误差 0.1235 仍在可用范围，应并列判读。
+- **速度方向整层外推（Leave-v-out）P 级 R²(sm) = -0.6124（负值）**，即该口径下预测不如均值，
+  属硬限制，不能因 P95 混合误差较低而误判为可靠（与下文既有结论一致）。
+- **外部简单基线在部分指标上有竞争力**：F/M 级 `linear` 的 R²(sm) 与生产模型持平、`nn` 的
+  Dice/IoU 更高。选择 `pod_rbf` 的依据是"质心定位最准 + 2.5 MB 产物 + 连续参数化 + OOD/
+  不确定度护栏"的组合优势，而非任意单指标领先。
+
+- **pod_rbf 训练存在 ~1e-4 量级的非确定性（已知可复现性风险，本轮不修）**：生产尺寸下
+  sklearn PCA 走 randomized SVD 且未固定 random_state，同配置两次训练的第 4 位小数会波动
+  （如消融报告中 P 级 K=20 的 0.4460/0.4459 双值）。不影响本节任何结论；详见
+  [M3 验收报告 §7.9](docs/m3-acceptance-report.md)，修复计划在下一版本。
+
+完整证据链见：[模型验证报告](docs/model-validation-report.md) ｜
+[消融实验](docs/ablation-study.md) ｜ [不确定度校准](docs/uncertainty-validation.md) ｜
+[性能基准](docs/benchmark-report.md) ｜ [M3 验收报告](docs/m3-acceptance-report.md)。
 
 ## 结构化验证
 
@@ -281,8 +319,9 @@ python scripts/validation_study.py --data-dir path\to\data --level F
 
 默认输出到 `examples/results/validation_summary.md`，包含 Mean RE、P95 Hybrid、R²、IoU、Dice 与训练耗时。仓库不包含私有仿真矩阵，因此不会提交未经真实数据运行的占位数值。
 
-本机 `dist/data` 的 F/M/P 三级真实数据均已完成验证。下表每格为
-`Mean RE / P95 Hybrid`：
+本机 `dist/data` 的 F/M/P 三级真实数据均已完成验证。下表为 **M2 期（RBF 模型）**
+验证产物，每格为 `Mean RE / P95 Hybrid`；M3 生产模型（pod_rbf）的对应指标见
+[M3 验证结论](#m3-验证结论)与各分项报告：
 
 | 等级 | Random | Leave-h | Leave-v | Leave-deg | Corner |
 |---|---:|---:|---:|---:|---:|
@@ -292,8 +331,10 @@ python scripts/validation_study.py --data-dir path\to\data --level F
 
 完整结果见 [`F`](examples/results/validation_summary.md)、
 [`M`](examples/results/validation_summary_M.md)、
-[`P`](examples/results/validation_summary_P.md)。三等级都表明速度方向整层外推最困难；
-其中 P 级 Leave-v-out 的 R² 为 -0.597，不能因 P95 Hybrid 较低而误判为可靠。
+[`P`](examples/results/validation_summary_P.md)（均为 M2 期 RBF 产物）。三等级都表明
+速度方向整层外推最困难；其中 P 级 Leave-v-out 的 R² 为 **-0.597（M2 期 RBF 模型口径；
+M3 生产模型 pod_rbf 同口径为 -0.6124，见上文 [M3 验证结论](#m3-验证结论)）**，
+不能因 P95 Hybrid 较低而误判为可靠。
 
 ### OOD 阈值校准
 
@@ -344,7 +385,7 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 ```
 
-共 **181 个用例**，全部基于合成数据（不依赖私有真实数据）：
+共 **236 个用例**（M2 冻结时 139 + M3 新增 97），全部基于合成数据（不依赖私有真实数据）：
 
 - 散布参数转换（CEP / REP-DEP → σ）、概率核归一化、零散布极限；相关散布核（ρ ≠ 0）与旋转椭圆协方差
 - Monte Carlo 期望毁伤效能 vs 解析卷积的一致性（独立/相关散布两组）
@@ -360,13 +401,14 @@ python -m unittest discover -s tests -v
 - CLI（info / predict / batch 退出码与产物）
 - **数值回归**：固定种子合成集上的黄金值对比（预测场 / POD 模态 / OOD 分级 / 核心指标）
 - 项目版本、Windows 发布包版本与许可证元数据一致性
+- M3 科学验证框架：消融实验矩阵与错误隔离、外部基线（nn/linear）、性能基准、不确定度校准（LOO 残差 + kNN）、SQLite 实验追踪、模型生命周期状态机、输入漂移 KS 检测、RBF 数值防护（奇异/重复工况）、Hypothesis 属性测试
 
 CI（`.github/workflows/test.yml`）四段流水线，失败可按 job 定位阶段：
 
 ```text
 push / PR
  ├─ lint   (Ubuntu)            ruff check
- ├─ test   (Windows + Ubuntu)  全部 181 个用例（含数值回归双平台对比）
+ ├─ test   (Windows + Ubuntu)  全部 236 个用例（含数值回归双平台对比）
  └─ build  (Windows)           真实运行 PyInstaller 构建 → 校验 exe 产物 → 上传 artifact
      └─ release                仅 tag 推送时把构建产物挂到 GitHub Release
 ```

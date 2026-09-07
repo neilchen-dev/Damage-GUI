@@ -25,7 +25,11 @@ from sklearn.decomposition import PCA
 from damage_gui.config import CONFIG, Config
 from damage_gui.data.loader import Condition
 from damage_gui.data.preprocessing import roi_mask_for_shape
-from damage_gui.model.rbf import build_aligned_shapes, compute_alignment_window
+from damage_gui.model.rbf import (
+    build_aligned_shapes,
+    compute_alignment_window,
+    make_rbf_interpolator,
+)
 
 
 class PODRBFDamageField:
@@ -42,9 +46,11 @@ class PODRBFDamageField:
         align: bool = True,
         n_components: int = 20,
         config: Config | None = None,
+        epsilon: float | None = None,
     ):
         self.kernel = kernel
         self.smoothing = smoothing
+        self.epsilon = epsilon
         self.target_shape = target_shape
         self.align = align
         self.n_components = int(n_components)
@@ -98,18 +104,15 @@ class PODRBFDamageField:
         self.n_components_used = int(n_comp)
 
         normalized = self._normalize(conditions)
-        self.coeff_interpolator = RBFInterpolator(
-            normalized,
-            coefficients,
-            kernel=self.kernel,
-            smoothing=self.smoothing,
+        epsilon = getattr(self, "epsilon", None)  # 兼容旧版 joblib 模型
+        self.coeff_interpolator = make_rbf_interpolator(
+            normalized, coefficients, self.kernel, self.smoothing, epsilon,
+            "模态系数插值",
         )
         if self.align:
-            self.centroid_interpolator = RBFInterpolator(
-                normalized,
-                centroids,
-                kernel=self.kernel,
-                smoothing=self.smoothing,
+            self.centroid_interpolator = make_rbf_interpolator(
+                normalized, centroids, self.kernel, self.smoothing, epsilon,
+                "质心插值",
             )
 
     def _reconstruct_window(self, query: np.ndarray) -> np.ndarray:

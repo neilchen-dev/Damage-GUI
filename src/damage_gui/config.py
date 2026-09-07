@@ -79,8 +79,11 @@ class Config:
 
     # RBF 插值场参数：kernel 为 scipy.interpolate.RBFInterpolator 的核函数，
     # smoothing=0 表示精确插值（训练工况上零误差）。
+    # epsilon 仅对 multiquadric / inverse_multiquadric / gaussian 核生效；
+    # None 表示使用 scipy 默认值（保持历史行为）。
     rbf_kernel: str = "thin_plate_spline"
     rbf_smoothing: float = 0.0
+    rbf_epsilon: float | None = None
     # 质心对齐插值：毁伤图案随工况平移时，逐像素直接插值会产生"重影"
     # （新旧位置各留一个变淡的影子，图案该在的位置反而预测为 0）。
     # 开启后先把每幅矩阵平移到质心居中的标准位置再插值形状，

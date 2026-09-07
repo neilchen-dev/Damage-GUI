@@ -39,6 +39,13 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _p95_suffix(value: Any) -> str:
+    """验证摘要行的 P95 后缀；缺失时留空不误导。"""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return ""
+    return f"，P95混合 {value:.2%}"
+
+
 def git_commit_sha() -> str | None:
     """当前代码 commit（短 SHA）；不在 Git 仓库或 Git 不可用时返回 None。"""
     try:
@@ -88,9 +95,16 @@ def _validation_summary(
     validation_mode: str,
     train_time_seconds: float,
 ) -> dict[str, Any]:
-    """从训练产出的精度报告中提取验证摘要（核心指标 + R²）。"""
+    """从训练产出的精度报告中提取验证摘要。
+
+    主口径为 Smoothed（局部平均场）：历史键名
+    mean_relative_error / p95_hybrid_error / r2 保持不变；
+    同时并列记录 Raw（逐像素）口径的 raw_* 键，并以
+    primary_field 显式标注主口径，避免单一口径被误读。
+    """
     summary: dict[str, Any] = {
         "method": validation_mode,
+        "primary_field": "smoothed",
         "train_time_seconds": round(float(train_time_seconds), 3),
     }
     mean_re, p95_hybrid = extract_core_metrics(accuracy_report, config)
@@ -99,15 +113,27 @@ def _validation_summary(
     if p95_hybrid is not None and not math.isnan(float(p95_hybrid)):
         summary["p95_hybrid_error"] = round(float(p95_hybrid), 6)
 
+    raw_mean_re, raw_p95_hybrid = (
+        extract_core_metrics(accuracy_report, config, field="raw")
+        if "field" in accuracy_report.columns
+        else (None, None)
+    )
+    if raw_mean_re is not None and not math.isnan(float(raw_mean_re)):
+        summary["raw_mean_relative_error"] = round(float(raw_mean_re), 6)
+    if raw_p95_hybrid is not None and not math.isnan(float(raw_p95_hybrid)):
+        summary["raw_p95_hybrid_error"] = round(float(raw_p95_hybrid), 6)
+
     focus_scope = f"damage_gt_{config.relative_error_threshold:.2f}"
-    focus = accuracy_report[
-        (accuracy_report["scope"] == focus_scope)
-        & (accuracy_report["field"] == "smoothed")
-    ]
-    if not focus.empty:
-        r2 = float(focus.iloc[0]["R2"])
-        if not math.isnan(r2):
-            summary["r2"] = round(r2, 6)
+    for field_name, r2_key in (("smoothed", "r2"), ("raw", "raw_r2")):
+        focus = accuracy_report[accuracy_report["scope"] == focus_scope]
+        if "field" in accuracy_report.columns:
+            focus = focus[focus["field"] == field_name]
+        elif field_name != "smoothed":
+            continue
+        if not focus.empty:
+            r2 = float(focus.iloc[0]["R2"])
+            if not math.isnan(r2):
+                summary[r2_key] = round(r2, 6)
     return summary
 
 
@@ -190,10 +216,24 @@ class ModelMetadata:
             lines.append(f"训练时代码 commit: {self.code_commit}")
         validation = self.validation
         if "mean_relative_error" in validation:
-            lines.append(
-                f"验证: {validation.get('method', '-')}，"
-                f"MeanRE {validation['mean_relative_error']:.2%}"
-            )
+            method = validation.get("method", "-")
+            if "raw_mean_relative_error" in validation:
+                lines.append(
+                    f"验证: {method}（主口径: Smoothed 局部平均场）"
+                )
+                lines.append(
+                    f"Smoothed: MeanRE {validation['mean_relative_error']:.2%}"
+                    + _p95_suffix(validation.get("p95_hybrid_error"))
+                )
+                lines.append(
+                    f"Raw: MeanRE {validation['raw_mean_relative_error']:.2%}"
+                    + _p95_suffix(validation.get("raw_p95_hybrid_error"))
+                )
+            else:
+                lines.append(
+                    f"验证: {method}，"
+                    f"MeanRE {validation['mean_relative_error']:.2%}"
+                )
         return lines
 
 
@@ -219,6 +259,8 @@ def build_metadata(
         "eval_smoothing_sigma": config.eval_smoothing_sigma,
         "target_shape": list(config.target_shape),
     }
+    if getattr(config, "rbf_epsilon", None) is not None:
+        parameters["rbf_epsilon"] = float(config.rbf_epsilon)
     if model_type == "pod_rbf":
         parameters["pod_n_components"] = int(
             pod_n_components or config.pod_n_components

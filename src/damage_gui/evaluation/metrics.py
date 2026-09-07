@@ -211,15 +211,16 @@ def spatial_metrics(
 def extract_core_metrics(
     accuracy_report: pd.DataFrame,
     config: Config | None = None,
+    field: str = "smoothed",
 ) -> tuple[float | None, float | None]:
-    """提取 Smoothed 主要毁伤区的 Mean RE 与 P95 Hybrid。"""
+    """提取主要毁伤区的 Mean RE 与 P95 Hybrid（field 口径默认平滑场）。"""
     if accuracy_report.empty:
         return None, None
     config = config or CONFIG
     focus_scope = f"damage_gt_{config.relative_error_threshold:.2f}"
     focus = accuracy_report[accuracy_report["scope"] == focus_scope]
     if "field" in accuracy_report.columns:
-        focus = focus[focus["field"] == "smoothed"]
+        focus = focus[focus["field"] == field]
     if focus.empty or pd.isna(focus.iloc[0].get("MeanRelativeError", np.nan)):
         return None, None
     return (

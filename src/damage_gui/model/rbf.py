@@ -12,6 +12,44 @@ from scipy.ndimage import shift as ndi_shift
 from damage_gui.config import CONFIG, Config
 from damage_gui.data.loader import Condition
 from damage_gui.data.preprocessing import roi_mask_for_shape
+from damage_gui.errors import ModelFitError
+
+
+def make_rbf_interpolator(
+    normalized: np.ndarray,
+    values: np.ndarray,
+    kernel: str,
+    smoothing: float,
+    epsilon: float | None,
+    role: str,
+) -> RBFInterpolator:
+    """构造带数值防护的 RBF 插值器（RBF 与 POD-RBF 共用）。
+
+    精确插值（smoothing=0）下，归一化工况存在重复行时方程组必然奇异，
+    提前给出可读错误而不是让求解器在内部崩溃；
+    smoothing>0 时 scipy 走正则化最小二乘，重复工况合法，不做拦截。
+    求解奇异/病态（如工况近似共线）统一转为 ModelFitError。
+    epsilon 为 None 时不向 scipy 传参，保持默认启发式行为。
+    """
+    if (
+        smoothing == 0.0
+        and np.unique(normalized, axis=0).shape[0] < normalized.shape[0]
+    ):
+        raise ModelFitError(
+            f"{role}失败：训练工况存在重复点，精确插值（smoothing=0）"
+            "在重复工况下无解；请去重或将 smoothing 设为大于 0 的值"
+        )
+    kwargs: dict = {"kernel": kernel, "smoothing": smoothing}
+    if epsilon is not None:
+        kwargs["epsilon"] = epsilon
+    try:
+        return RBFInterpolator(normalized, values, **kwargs)
+    except (np.linalg.LinAlgError, ValueError) as exc:
+        raise ModelFitError(
+            f"{role}失败：RBF 方程组奇异或病态（{exc}）。"
+            "常见原因：训练工况共线/共面，或精确插值数值不稳定；"
+            "可将 smoothing 设为略大于 0 的值重试"
+        ) from exc
 
 
 def compute_alignment_window(
@@ -97,9 +135,11 @@ class RBFDamageField:
         target_shape: tuple[int, int],
         align: bool = True,
         config: Config | None = None,
+        epsilon: float | None = None,
     ):
         self.kernel = kernel
         self.smoothing = smoothing
+        self.epsilon = epsilon
         self.target_shape = target_shape
         self.align = align
         self.config = config or CONFIG
@@ -137,18 +177,13 @@ class RBFDamageField:
         )
 
         normalized = self._normalize(conditions)
-        self.shape_interpolator = RBFInterpolator(
-            normalized,
-            shapes,
-            kernel=self.kernel,
-            smoothing=self.smoothing,
+        epsilon = getattr(self, "epsilon", None)  # 兼容旧版 joblib 模型
+        self.shape_interpolator = make_rbf_interpolator(
+            normalized, shapes, self.kernel, self.smoothing, epsilon, "形状插值"
         )
         if self.align:
-            self.centroid_interpolator = RBFInterpolator(
-                normalized,
-                centroids,
-                kernel=self.kernel,
-                smoothing=self.smoothing,
+            self.centroid_interpolator = make_rbf_interpolator(
+                normalized, centroids, self.kernel, self.smoothing, epsilon, "质心插值"
             )
 
     def _reconstruct_window(self, query: np.ndarray) -> np.ndarray:

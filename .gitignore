@@ -41,6 +41,30 @@ dist/dist/
 !src/damage_gui/webapp/static/assets/
 !src/damage_gui/webapp/static/assets/*.png
 
+# M3 scientific evidence (freeze policy): SQLite + JSON + Markdown + key CSV/PNG
+# are tracked; regenerable M2-era CSVs and non-referenced PNGs stay local.
+!examples/results/experiments/*.csv
+!examples/results/experiments/*.json
+!examples/results/experiments/*.md
+!examples/results/benchmark/*.csv
+!examples/results/benchmark/*.json
+!examples/results/benchmark/*.md
+!examples/results/uncertainty/*.csv
+!examples/results/uncertainty/*.json
+!examples/results/uncertainty/*.md
+!examples/results/uncertainty/*_reliability.png
+!examples/results/f_prediction.png
+
+# Local session / agent state and workspace shortcuts
+.workbuddy/
+.zcode/
+*.lnk
+
+# Root-level local artifacts (regenerated per training run; models are not
+# distributed via git — sidecar meta.json is ignored together with its joblib)
+/damage_model_*.joblib
+/damage_model_*.meta.json
+
 # Local environment and secrets
 .env
 .env.*

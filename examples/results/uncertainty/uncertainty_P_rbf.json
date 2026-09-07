@@ -1,0 +1,50 @@
+{
+  "name": "uncertainty_P_rbf",
+  "data_dir": "dist\\data",
+  "generated_at": "2026-09-02T06:01:26+00:00",
+  "summary": {
+    "level": "P",
+    "model_type": "rbf",
+    "n_samples": 120,
+    "k": 3,
+    "error_mean": 0.0003419746445918766,
+    "spearman_distance": 0.011011884930411765,
+    "spearman_residual_knn": 0.5912355024654489
+  },
+  "bins": {
+    "distance": [
+      {
+        "bin": 0,
+        "n": 120,
+        "mean_estimate": 0.25935416158288566,
+        "mean_error": 0.0003419746445918766
+      }
+    ],
+    "residual_knn": [
+      {
+        "bin": 0,
+        "n": 30,
+        "mean_estimate": 0.00016401285619293857,
+        "mean_error": 0.00015896235975863723
+      },
+      {
+        "bin": 1,
+        "n": 30,
+        "mean_estimate": 0.00027169942396641187,
+        "mean_error": 0.00033046895017226535
+      },
+      {
+        "bin": 2,
+        "n": 30,
+        "mean_estimate": 0.0003745909543391059,
+        "mean_error": 0.00039443663457253326
+      },
+      {
+        "bin": 3,
+        "n": 30,
+        "mean_estimate": 0.0005363611362150145,
+        "mean_error": 0.0004840306338640706
+      }
+    ]
+  }
+}

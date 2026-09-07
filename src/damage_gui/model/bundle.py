@@ -18,13 +18,14 @@ from damage_gui.data.loader import (
 from damage_gui.data.preprocessing import evaluation_fields, roi_description, roi_mask_for_shape
 from damage_gui.errors import OperationCancelled
 from damage_gui.evaluation.metrics import SPATIAL_KEYS, metric_row, spatial_metrics
+from damage_gui.experiments.baselines import LinearInterpField, NearestNeighborField
 from damage_gui.model.metadata import ModelMetadata, build_metadata
 from damage_gui.model.ood import OODDetector
 from damage_gui.model.pod import PODRBFDamageField
 from damage_gui.model.rbf import RBFDamageField
 from damage_gui.model.validation import make_splits
 
-DamageFieldModel = RBFDamageField | PODRBFDamageField
+DamageFieldModel = RBFDamageField | PODRBFDamageField | NearestNeighborField | LinearInterpField
 
 
 class TrainingCancelled(OperationCancelled):
@@ -48,6 +49,9 @@ class ModelBundle:
     validation_mode: str = "random"
     model_type: str = "rbf"
     train_time_seconds: float = 0.0
+    # 线性基线：评估预测中落在训练工况凸包外（最近邻回填）的比例；
+    # RBF 家族模型为 None。
+    test_extrapolation_fraction: float | None = None
     # 训练完成时自动构建；旧版模型包（无该字段）加载后为 None
     metadata: ModelMetadata | None = None
 
@@ -70,6 +74,7 @@ def build_model(
             align=config.align_patterns,
             n_components=pod_n_components or config.pod_n_components,
             config=config,
+            epsilon=getattr(config, "rbf_epsilon", None),
         )
     if model_type == "rbf":
         return RBFDamageField(
@@ -78,7 +83,12 @@ def build_model(
             target_shape=config.target_shape,
             align=config.align_patterns,
             config=config,
+            epsilon=getattr(config, "rbf_epsilon", None),
         )
+    if model_type == "nn":
+        return NearestNeighborField(target_shape=config.target_shape, config=config)
+    if model_type == "linear":
+        return LinearInterpField(target_shape=config.target_shape, config=config)
     raise ValueError(f"未知模型类型: {model_type}")
 
 
@@ -144,6 +154,7 @@ class DamageModelService:
         pairs: list[tuple[DamageRecord, np.ndarray, np.ndarray]] = []
         deliverable_model: DamageFieldModel | None = None
         deliverable_train_records: list[DamageRecord] = []
+        extrapolation_fractions: list[float] = []
 
         for split_index, split in enumerate(splits):
             prefix = (
@@ -173,6 +184,10 @@ class DamageModelService:
                 done += 1
                 report(f"{prefix}评估测试工况 {i + 1}/{len(split.test)}")
             check_cancel()
+
+            fraction = getattr(model, "extrapolation_fraction", None)
+            if fraction is not None:
+                extrapolation_fractions.append(float(fraction))
 
             if not is_loo:
                 deliverable_model = model
@@ -229,6 +244,11 @@ class DamageModelService:
             validation_mode=validation_mode,
             model_type=model_type,
             train_time_seconds=train_time,
+            test_extrapolation_fraction=(
+                sum(extrapolation_fractions) / len(extrapolation_fractions)
+                if extrapolation_fractions
+                else None
+            ),
             metadata=build_metadata(
                 model_type=model_type,
                 damage_level=level,
