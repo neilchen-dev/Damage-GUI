@@ -249,6 +249,14 @@ docker compose up --build
 | ROI 区域 | 0.0071 | 0.0017 | 0.9864 | — | — |
 | 主要毁伤区（`damage > 0.05`） | 0.0203 | 0.0125 | 0.9533 | 8.40% | 17.60% |
 
+指标口径（实现见 `src/damage_gui/evaluation/metrics.py` 与 `src/damage_gui/config.py`）：
+
+- `R²` 使用决定系数；上表 0.9533 对应主要毁伤区的像素强度拟合，不代表每个工况或每个像素误差都小。
+- 平均相对误差只在真值 `damage > 0.05` 的像素上计算：`mean(|pred - true| / true)`，避免近零背景把比例误差异常放大。
+- P95 混合误差先逐像素计算 `|pred - true| / max(true, 0.25)`，再取第 95 百分位；它是主要毁伤区逐点误差分布的尾部指标，不是最大误差，也不是“95% 的样本误差”。
+- Raw 与 Smoothed 指标并列保留：Smoothed 对真值和预测施加相同局部平均，用于降低真值残余蒙特卡洛噪声的影响；热力图仍展示 Raw 场，不用平滑结果替代原始空间结构。
+- 空间评价另含强度加权质心误差、峰值位置 / 强度误差，以及阈值二值区域的 IoU / Dice；数值强度准确不自动等于空间位置和形状准确。
+
 ![F 级留出工况：真实毁伤场、预测毁伤场与带符号误差](examples/results/f_prediction.png)
 
 完整指标 CSV 与结果摘要见 [`examples/results`](examples/results)。如需复现：
