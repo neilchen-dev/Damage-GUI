@@ -150,6 +150,9 @@ def main(output):
     bad.write_text('a,b\n1,2\n')
     validate(bad)
     assert page.parsed is None and not page.run_button.isEnabled()
+    # closeEvent shows a MODAL confirm dialog while the adapter is busy (the
+    # async validation above may still be in flight) and hangs offscreen.
+    wait(lambda: not window.task_adapter.is_busy() and not window.workflow._requests)
     window.close()
     wait(lambda: not window.isVisible())
     # Reopening reloads persistent history without session Jobs.

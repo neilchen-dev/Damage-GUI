@@ -152,6 +152,14 @@ def main():
         (output / "evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
         print(json.dumps({key: value for key, value in evidence.items() if key != "captures"}, indent=2))
     finally:
+        # Drain background tasks: closeEvent shows a MODAL confirm dialog
+        # while the adapter is busy, which hangs forever offscreen.
+        deadline = time.monotonic() + 10
+        while window.task_adapter.is_busy() or window.workflow._requests:
+            app.processEvents()
+            if time.monotonic() > deadline:
+                break
+            time.sleep(0.005)
         window.close()
         tmp.cleanup()
 
