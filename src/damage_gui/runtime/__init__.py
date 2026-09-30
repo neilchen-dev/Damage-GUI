@@ -1,6 +1,6 @@
 """运行时路径解析（UI 无关）。
 
-- app_base_dir()   应用根目录（源码为项目根，打包为 exe 所在目录）
+- app_base_dir()   应用数据根目录（源码为项目根，打包为平台用户数据目录）
 - resource_path()  随包资源路径（兼容 PyInstaller _MEIPASS）
 
 存储层（storage.db）、日志（logging_setup）等非 GUI 模块从这里导入，

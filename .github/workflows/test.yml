@@ -41,19 +41,71 @@ jobs:
 
       # Web tests are optional for the desktop runtime but are part of CI.
       # Hypothesis property-based tests (tests/test_properties.py) require the
-      # [test] extra, which is not part of the runtime requirements.txt.
-      - name: Install optional Web and test dependencies
-        run: pip install -e ".[web,test]"
+      # [test] extra. The [desktop-qt] extra is needed because unittest
+      # discovery imports every tests/test_*.py file; the pytest-style Qt
+      # suites are imported (not executed) here and skip cleanly only when
+      # PySide6/matplotlib are importable.
+      - name: Install optional Web, Qt, and test dependencies
+        run: pip install -e ".[desktop-qt,web,test]"
 
-      # 含单元测试与数值回归测试（Windows/Linux 双平台黄金值对比）
+      # 含单元测试与数值回归测试（Windows/Linux 双平台黄金值对比）。
+      # 失败时把完整输出附加到 job summary，便于离线诊断（日志可能截断）。
       - name: Run unit and numerical regression tests
         env:
           PYTHONPATH: src
-        run: python -m unittest discover -s tests -v
+          PYTHONIOENCODING: utf8
+          PYTHONUTF8: "1"
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v 2>&1 | Tee-Object -FilePath unittest-output.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content -Raw unittest-output.log |
+              Out-File -Append $env:GITHUB_STEP_SUMMARY -Encoding utf8
+            exit 1
+          }
+
+  qt-smoke:
+    # Phase 2.5: headless Qt desktop tests (offscreen platform). These are
+    # pytest-style files, so unittest discovery above does not collect them.
+    name: Headless Qt smoke (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Qt runtime system libraries (offscreen)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon0 libglib2.0-0 \
+            libdbus-1-3 libfontconfig1
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e ".[desktop-qt,test]"
+
+      - name: Run headless Qt workbench tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: src
+        run: python -m pytest tests/test_qt_workbench.py tests/test_qt_batch_workflow.py tests/test_qt_consolidation.py tests/test_qt_prediction_traceability.py tests/test_qt_training.py tests/test_qt_validation.py tests/test_scientific_theme.py -q --junitxml=qt-smoke-junit.xml
+
+      - name: Upload test report (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qt-smoke-junit
+          path: qt-smoke-junit.xml
+          if-no-files-found: ignore
 
   build:
-    name: Windows PyInstaller build
-    needs: [lint, test]
+    # Phase 2.5: the shipped desktop product is the Qt app (damage-gui-qt),
+    # no longer the legacy Tkinter workbench.
+    name: Windows PyInstaller build (Qt desktop)
+    needs: [lint, test, qt-smoke]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,19 +115,19 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt "pyinstaller>=6.0,<7"
+        run: pip install -r requirements.txt PySide6 "pyinstaller>=6.0,<7"
 
-      - name: Build Windows release package
+      - name: Build Windows Qt release package
         shell: cmd
-        run: scripts\build_release.bat
+        run: scripts\build_qt_release.bat
 
       - name: Verify executable artifact
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path release -Recurse -Filter "*.exe" |
+          $exe = Get-ChildItem -Path release -Recurse -Filter "DamageLab.exe" |
             Select-Object -First 1
           if (-not $exe) {
-            Write-Error "PyInstaller build produced no .exe artifact"
+            Write-Error "PyInstaller build produced no DamageLab.exe artifact"
             exit 1
           }
           Write-Host "Built executable: $($exe.FullName)"
@@ -83,7 +135,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Damage-GUI-win64
+          name: DamageLab-qt-win64
           path: release/
           if-no-files-found: error
 
@@ -99,15 +151,15 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: Damage-GUI-win64
+          name: DamageLab-qt-win64
           path: release
 
       - name: Zip release package
         run: |
           cd release
-          zip -r ../Damage-GUI-win64.zip .
+          zip -r ../DamageLab-qt-win64.zip .
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: Damage-GUI-win64.zip
+          files: DamageLab-qt-win64.zip

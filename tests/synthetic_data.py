@@ -37,10 +37,11 @@ def synthetic_matrix(h: float, v: float, deg: float) -> np.ndarray:
     )
 
 
-def write_synthetic_dataset(directory: Path) -> None:
-    for h in (1.0, 2.0, 3.0):
-        for v in (100.0, 200.0):
-            for deg in (10.0, 20.0):
+def write_synthetic_dataset(directory: Path, *, heights=(1.0, 2.0, 3.0),
+                            velocities=(100.0, 200.0), angles=(10.0, 20.0)) -> None:
+    for h in heights:
+        for v in velocities:
+            for deg in angles:
                 matrix = synthetic_matrix(h, v, deg)
                 name = (
                     f"DamageMatrix_F_h_{int(h * 10)}"

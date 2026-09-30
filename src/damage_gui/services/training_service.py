@@ -41,8 +41,10 @@ class TrainingService:
         *,
         db_path: str | Path | None = None,
         report_dir: str | Path | None = None,
+        record_db: bool = True,
     ) -> None:
         self.model_service = model_service
+        self.record_db = record_db
         self.db_path = resolve_db_path(db_path)
         self.report_dir = Path(report_dir) if report_dir is not None else app_base_dir()
 
@@ -86,7 +88,7 @@ class TrainingService:
             if "field" in bundle.accuracy_report.columns
             else (None, None)
         )
-        db_recorded = self._record_training_to_db(
+        db_recorded = self.record_db and self._record_training_to_db(
             bundle, mean_re, p95_hybrid, raw_mean_re, raw_p95_hybrid
         )
         return TrainingResult(

@@ -107,6 +107,8 @@ class DamageModelService:
         pod_n_components: int | None = None,
         progress: ProgressCallback | None = None,
         cancel_check=None,
+        held_out_value: float | None = None,
+        evaluation_observer=None,
     ) -> ModelBundle:
         """训练并评估模型。
 
@@ -132,6 +134,14 @@ class DamageModelService:
             raise ValueError("可训练工况过少，至少需要 5 个工况")
 
         splits = make_splits(records, validation_mode, config)
+        if held_out_value is not None:
+            field = {'leave_h_out':'h','leave_v_out':'v','leave_deg_out':'deg'}.get(validation_mode)
+            if field is None:
+                raise ValueError('A held-out value requires a layer validation mode')
+            splits = [split for split in splits
+                      if getattr(split.test[0].condition, field) == held_out_value]
+            if not splits:
+                raise ValueError('Selected held-out layer is unavailable')
         is_loo = validation_mode in ("leave_h_out", "leave_v_out", "leave_deg_out")
 
         # 矩阵读取缓存：整层留出会多次访问同一条记录，避免重复解析文件
@@ -177,12 +187,15 @@ class DamageModelService:
             model.fit(conditions, matrices)
             check_cancel()
 
+            pair_start = len(pairs)
             for i, record in enumerate(split.test):
                 true_matrix = load_matrix(record)
                 pred_matrix = model.predict_matrix(record.condition)
                 pairs.append((record, true_matrix, pred_matrix))
                 done += 1
                 report(f"{prefix}评估测试工况 {i + 1}/{len(split.test)}")
+            if evaluation_observer is not None:
+                evaluation_observer(split, pairs[pair_start:])
             check_cancel()
 
             fraction = getattr(model, "extrapolation_fraction", None)
@@ -212,20 +225,9 @@ class DamageModelService:
 
         accuracy_report, condition_report = self._evaluate_pairs(level, pairs)
 
-        ood_detector = OODDetector(
-            high_max=config.ood_high_max,
-            medium_max=config.ood_medium_max,
-            use_hull=config.ood_use_hull,
-            use_local_support=config.ood_use_local_support,
-            local_neighbors=config.ood_local_neighbors,
-            max_1d_gap_ratio=config.ood_max_1d_gap_ratio,
-        )
-        ood_detector.fit(
-            np.array(
-                [record.condition.as_array() for record in deliverable_train_records],
-                dtype=np.float64,
-            )
-        )
+        ood_detector = self.make_ood_detector(np.array(
+            [record.condition.as_array() for record in deliverable_train_records],
+            dtype=np.float64))
 
         test_records = records if is_loo else splits[0].test
         train_time = time.perf_counter() - started
@@ -260,6 +262,20 @@ class DamageModelService:
                 pod_n_components=pod_n_components,
             ),
         )
+
+    def make_ood_detector(self, conditions):
+        """Use the same reliability configuration for final and validation-fold support."""
+        config = self.config
+        detector = OODDetector(
+            high_max=config.ood_high_max,
+            medium_max=config.ood_medium_max,
+            use_hull=config.ood_use_hull,
+            use_local_support=config.ood_use_local_support,
+            local_neighbors=config.ood_local_neighbors,
+            max_1d_gap_ratio=config.ood_max_1d_gap_ratio,
+        )
+        detector.fit(conditions)
+        return detector
 
     def predict_matrix(self, bundle: ModelBundle, condition: Condition) -> np.ndarray:
         return bundle.model.predict_matrix(condition)

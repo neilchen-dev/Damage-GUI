@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 
 import joblib
@@ -14,25 +16,55 @@ from damage_gui.model.metadata import ModelMetadata, sidecar_path
 logger = logging.getLogger("damage_gui.registry")
 
 
-def save_model(bundle: ModelBundle, path: str | Path) -> Path:
-    """保存模型：joblib 主文件 + *.meta.json 元数据 sidecar。"""
+def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True) -> Path:
+    """Serialize fully before publishing; registry callers reject existing files.
+
+    Each file is atomic, but the pair is not a filesystem transaction. Metadata is
+    published first. Default replacement preserves historical Save As behavior;
+    registration uses atomic no-clobber hard links on the same filesystem.
+    """
     path = Path(path)
-    joblib.dump(bundle, path)
     metadata = getattr(bundle, "metadata", None)
-    if metadata is None:
-        logger.warning(
-            "模型 %s 不含元数据（旧版训练产物），仅保存 joblib 主文件", path.name
-        )
-        return path
     sidecar = sidecar_path(path)
-    sidecar.write_text(
-        json.dumps(metadata.to_dict(), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    logger.info(
-        "模型已保存: %s (model_id=%s, app=%s)",
-        path.name, metadata.model_id[:8], metadata.app_version,
-    )
+    if not overwrite and (path.exists() or sidecar.exists()):
+        raise FileExistsError(f"Model artifact already exists: {path.name}")
+    temporary, published = [], []
+    try:
+        fd, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        os.close(fd)
+        model_tmp = Path(name)
+        temporary.append(model_tmp)
+        joblib.dump(bundle, model_tmp)
+        # Windows 的 FlushFileBuffers 要求句柄有写权限，只读 fd 会报
+        # Errno 9（POSIX 允许对只读 fd fsync，故仅在 Windows CI 暴露）。
+        with model_tmp.open("rb+") as stream:
+            os.fsync(stream.fileno())
+        if metadata is not None:
+            fd, name = tempfile.mkstemp(prefix=f".{sidecar.name}.", dir=path.parent)
+            meta_tmp = Path(name)
+            temporary.append(meta_tmp)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(metadata.to_dict(), stream, ensure_ascii=False, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if overwrite:
+                os.replace(meta_tmp, sidecar)
+            else:
+                os.link(meta_tmp, sidecar)
+                published.append(sidecar)
+        if overwrite:
+            os.replace(model_tmp, path)
+        else:
+            os.link(model_tmp, path)
+            published.append(path)
+    except Exception:
+        for artifact in published:
+            artifact.unlink(missing_ok=True)
+        raise
+    finally:
+        for artifact in temporary:
+            artifact.unlink(missing_ok=True)
+    logger.info("Model saved: %s", path.name)
     return path
 
 
@@ -41,10 +73,24 @@ def _load_sidecar(model_path: Path) -> ModelMetadata | None:
     if not sidecar.is_file():
         return None
     try:
-        data = json.loads(sidecar.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        text = sidecar.read_text(encoding="utf-8")
+    except OSError as exc:
         raise ModelLoadError(
-            f"元数据 sidecar 无法读取或不是合法 JSON: {sidecar.name}"
+            f"元数据 sidecar 无法读取: {sidecar.name}"
+        ) from exc
+    if not text.strip():
+        # 空文件视为写入中断（等同缺失）：回退内嵌元数据 / 旧版模型路径，
+        # 不阻断加载（Phase 2.5 §39 missing-metadata model）。
+        logger.warning(
+            "模型 %s 的元数据 sidecar 为空文件（可能写入中断），按无元数据处理",
+            model_path.name,
+        )
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ModelLoadError(
+            f"元数据 sidecar 不是合法 JSON: {sidecar.name}"
         ) from exc
     return ModelMetadata.from_dict(data)
 

@@ -6,7 +6,7 @@
 
 DamageLab is an engineering workbench for fast reconstruction and assessment of two-dimensional damage fields from simulated flight or impact conditions. Given `(h, v, deg)` and a damage level (`F`, `M`, or `P`), it predicts a continuous `473 × 473` field instead of a single scalar value.
 
-The project provides a Windows desktop GUI, a command-line interface, and an optional FastAPI service. The desktop and Web workbenches support live Chinese / English switching through their language selectors; language changes affect presentation only and never alter model files, CSV/SQLite formats, or scientific results.
+The project provides a **Qt desktop application (macOS / Windows / Linux)**, a command-line interface, and an optional FastAPI service. The desktop and Web workbenches support live Chinese / English switching through their language selectors; language changes affect presentation only and never alter model files, CSV/SQLite formats, or scientific results.
 
 **Research positioning:** Centroid-Aligned POD-RBF Surrogate Model for Fast Reconstruction and Assessment of High-Dimensional Damage Fields.
 
@@ -28,53 +28,78 @@ The implementation also supports structured validation (random, leave-h, leave-v
 
 ## Product capabilities
 
-- Windows-native Tkinter / ttk desktop workbench with DPI-aware rendering and runtime language switching.
-- Background task state machine for training, prediction, and batch operations, including cooperative cancellation.
+- Cross-platform Qt (PySide6) desktop workbench: prediction, training, validation, batch, model registry, and history in a CAE-style shell with a dark scientific viewport and live language switching.
+- Background task state machine for training, prediction, validation, and batch operations, including cooperative cancellation.
 - Model registry with joblib bundles, sidecar metadata, data fingerprints, software/model/schema versions, and Git commit traceability.
 - OOD confidence based on nearest-neighbor distance, global SVD support, and local training-neighborhood support.
 - CSV batch prediction with row-level failure isolation, progress, cancellation, and SQLite traceability.
 - FastAPI endpoints and a dependency-light browser workbench for health, models, prediction, batch jobs, history, results, and aim optimization.
-- PyInstaller onedir Windows release packaging and Docker Compose deployment for the Web service.
+- PyInstaller onedir release packaging (`DamageLab-<version>-<platform>`) for the Qt desktop and Docker Compose deployment for the Web service.
 
 ## Technology stack
 
 | Layer | Technology | Role |
 |---|---|---|
-| Runtime | Python 3.10–3.12 | Scientific computing, desktop, CLI, and Web service |
-| Desktop UI | Tkinter / ttk, Windows ctypes DPI APIs | Native workbench, fonts, and multi-monitor scaling |
+| Runtime | Python 3.10–3.14 | Scientific computing, desktop, CLI, and Web service |
+| Desktop UI | PySide6 (Qt 6), QtAgg; Tkinter (legacy) | CAE-style cross-platform workbench: tool-rail navigation, dark scientific viewport, inspector, activity panel |
 | Scientific computing | NumPy, SciPy, Pandas, scikit-learn, joblib | Arrays, filtering, interpolation, reduction, data, and persistence |
 | Surrogate model | POD/PCA, centroid alignment, RBF | Reduced-order damage-field reconstruction |
 | Evaluation | RMSE, MAE, R², relative error, IoU, Dice, OOD geometry | Numerical, spatial, and extrapolation-risk assessment |
-| Visualization | Matplotlib, TkAgg, high-DPI PNG rendering | Damage, prediction, error, and aim-point views |
+| Visualization | Matplotlib (QtAgg backend), high-DPI PNG rendering | Damage, prediction, error, and aim-point views |
 | Service | FastAPI, Pydantic, Uvicorn, httpx2 | Health, model, prediction, batch, history, and result APIs |
 | Web UI | Native HTML, CSS, and JavaScript | No-build browser workbench |
 | Traceability | SQLite, CSV, JSON sidecars, rotating logs | Model, job, result, input, and version history |
-| Delivery | PyInstaller onedir, Docker, Docker Compose, Nginx | Windows release and reverse-proxied server deployment |
+| Delivery | PyInstaller onedir (Qt / legacy Tk), Docker, Docker Compose, Nginx | macOS/Windows/Linux desktop release and reverse-proxied server deployment |
 | Quality | unittest, ruff, GitHub Actions, numerical golden values | Linting, cross-platform tests, builds, and regression control |
 
 ## Screenshots and branding
 
-These are screenshots captured from the current running desktop application, not mockups:
+These are screenshots captured from the current running Qt desktop application, not mockups:
 
-![DamageLab desktop workbench — Chinese](examples/screenshots/gui.png)
+![DamageLab Qt prediction workbench](examples/screenshots/qt/11_readme_prediction_1440x900.png)
 
-![DamageLab desktop workbench — English](examples/screenshots/gui_en.png)
+![DamageLab Qt training](examples/screenshots/qt/12_readme_training_1440x900.png)
 
-The `DL` product mark is shared by the desktop and Web interfaces. Source assets are kept in `src/damage_gui/gui/assets/` and `src/damage_gui/webapp/static/assets/`; the PyInstaller scripts include the desktop icon in the release package.
+![DamageLab Qt model registry](examples/screenshots/qt/14_readme_registry_1440x900.png)
+
+More workbench screenshots (validation / history / Chinese UI / 1280×720) are kept in [`examples/screenshots/qt/`](examples/screenshots/qt/). Desktop usage instructions are in [`docs/desktop.md`](docs/desktop.md); legacy Tkinter screenshots remain in `examples/screenshots/` for reference.
+
+The `DL` product mark is shared by the desktop and Web interfaces. Source assets are kept in `src/damage_gui/gui/assets/` and `src/damage_gui/webapp/static/assets/`; the Qt packaging spec (`scripts/damagelab-qt.spec`) bundles the desktop icon and the SVG icon set into the release package.
 
 ## Quick start
 
-```powershell
+### Desktop application (Qt, recommended)
+
+macOS / Windows / Linux, Python 3.10+:
+
+```bash
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:PYTHONPATH = "src"
-python -m damage_gui.app
+source .venv/bin/activate           # Windows: .venv\Scripts\Activate.ps1
+pip install -e ".[desktop-qt]"
+damage-gui-qt
 ```
 
-In the desktop GUI, select a local data directory, damage level, model type (RBF / POD-RBF), and validation mode. Train or load a model, then enter the operating condition for prediction. Training runs in the background and results include elapsed time, metrics, and model confidence.
+Basic workflow after launch:
 
-## CLI
+1. **Load a model**: on the prediction page, Open Model (`Cmd/Ctrl+O`) to pick a `*.joblib` bundle, or train a new one from a local data directory on the training page.
+2. **Model registry**: register the trained model, review its lifecycle status, and activate it.
+3. **Predict**: enter `(h, v, deg)` in the inspector → Run Prediction (`F5`); the dark viewport shows the predicted / truth / error fields with pan, zoom, probe, and PNG export.
+4. **Validate**: choose a structured validation mode (random / leave-layer-out / corner holdout).
+5. **Batch**: import a conditions CSV and export the batch report.
+6. **History**: trace every job (training / prediction / batch / validation) with input reconstruction.
+
+Desktop data (SQLite trace DB, logs, reports) is written to the platform user-data directory (macOS `~/Library/Application Support/DamageLab`, Windows `%APPDATA%\DamageLab`, Linux `~/.local/share/DamageLab`), never the install directory. Common shortcuts: `Cmd/Ctrl+O` open model, `Cmd/Ctrl+R` run current page, `Cmd/Ctrl+F` search, `Cmd/Ctrl+E` export, `Cmd/Ctrl+L` logs, `F5` predict. See [`docs/desktop.md`](docs/desktop.md) for the full guide.
+
+### Legacy desktop (Tkinter)
+
+```bash
+pip install -r requirements.txt
+PYTHONPATH=src python -m damage_gui.desktop
+```
+
+The legacy workbench still runs (pip entry point `damage-gui`) but new features land only in the Qt build; all desktop users should migrate to `damage-gui-qt`.
+
+### CLI
 
 ```powershell
 # Inspect model metadata
@@ -176,30 +201,34 @@ Full evidence chain: [model validation report](docs/model-validation-report.md) 
 [ablation study](docs/ablation-study.md) | [uncertainty validation](docs/uncertainty-validation.md) |
 [benchmark report](docs/benchmark-report.md) | [M3 acceptance report](docs/m3-acceptance-report.md).
 
-## Windows build
+## Desktop build
 
-The supported engineering distribution is a PyInstaller onedir package:
+The Qt desktop release is a PyInstaller onedir package named `DamageLab-<version>-<platform>`:
+
+```bash
+# macOS / Linux
+pip install "pyinstaller>=6,<7"
+scripts/build_qt_release.sh            # PYTHON=.venv/bin/python overrides the interpreter
+
+# Windows
+scripts\build_qt_release.bat
+```
+
+Artifacts land in `release/DamageLab-<version>-<platform>/` (macOS: `DamageLab.app` + README; Windows/Linux: onedir + README). The package bundles the Qt entry point, the SVG icon set, the app icon, and Matplotlib resources; it does not include training data or `.joblib` models. Build details, known platform issues, and the acceptance checklist are in [`docs/desktop.md`](docs/desktop.md) and [`docs/release-checklist.md`](docs/release-checklist.md).
+
+Legacy Tkinter build scripts (kept for compatibility):
 
 ```powershell
-.\scripts\build_release.bat
+.\scripts\build.bat               # regular build
+.\scripts\build_release.bat       # lightweight Windows release build
 ```
 
-The build scripts package the `DL` icon and UI assets and do not include private training matrices or pre-trained models by default.
+## Current limitations
 
-## Project structure
-
-```text
-src/damage_gui/
-├── app.py                 # thin desktop launcher
-├── cli.py                 # info / predict / batch CLI
-├── services/              # shared training, prediction, batch, export, and AIM orchestration
-├── model/                 # RBF, POD, validation, OOD, bundles, metadata, registry
-├── evaluation/            # numerical and spatial metrics
-├── optimization/          # pure aim-point optimization
-├── storage/               # SQLite schema and repositories
-├── gui/                   # Tkinter workbench, panels, i18n, styles, and assets
-└── webapp/                # FastAPI routes, schemas, jobs, rendering, and static UI
-```
+- Aim-point optimization defines the dispersion ellipse in the target normal plane (A1/A2 assumption); the ground-plane → normal-plane projection for oblique impact has not been modeled yet.
+- OOD detection is a three-layer geometric check (nearest-neighbor distance + SVD global hull + local neighborhood hull) with F/M/P thresholds calibrated on real structured validation; the local hull remains heuristic and should be recalibrated when the data grid changes.
+- Qt desktop packages are **unsigned local builds** (no code-signing certificate): on macOS the first launch needs right-click → Open; Windows SmartScreen may show "More info → Run anyway". Platform acceptance status: macOS verified on real hardware; Windows build verified in CI (no manual on-hardware GUI acceptance this phase); Linux **NOT TESTED** (on Wayland prefer `QT_QPA_PLATFORM=xcb`).
+- The Tkinter workbench (`damage-gui`) is retained but no longer evolves; new features are implemented only in the Qt build (`src/damage_gui/qt/`).
 
 ## License
 

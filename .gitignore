@@ -35,11 +35,15 @@ dist/dist/
 
 # Product screenshots and brand assets
 !examples/screenshots/*.png
+!examples/screenshots/qt/*.png
 !src/damage_gui/gui/assets/
 !src/damage_gui/gui/assets/*.ico
 !src/damage_gui/gui/assets/*.png
 !src/damage_gui/webapp/static/assets/
 !src/damage_gui/webapp/static/assets/*.png
+
+# PyInstaller spec for the Qt desktop release is source, not build output
+!scripts/damagelab-qt.spec
 
 # M3 scientific evidence (freeze policy): SQLite + JSON + Markdown + key CSV/PNG
 # are tracked; regenerable M2-era CSVs and non-referenced PNGs stay local.
@@ -78,3 +82,12 @@ logs/
 *.db
 *.db-wal
 *.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Release-acceptance scratch output (per-phase screenshots / reports / test DBs)
+outputs/
+
+# Python packaging metadata
+*.egg-info/

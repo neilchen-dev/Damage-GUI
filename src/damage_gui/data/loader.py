@@ -81,9 +81,7 @@ def read_damage_matrix(path: Path, config: Config | None = None) -> np.ndarray:
     config 参数允许消融实验关闭降噪（denoise_radius=0）。
     """
     config = config or CONFIG
-    frame = pd.read_csv(path, sep="\t", encoding="gbk", header=None, skiprows=1)
-    frame = frame.dropna(axis=1, how="all")
-    matrix = frame.to_numpy(dtype=np.float32)
+    matrix = read_source_matrix(path)
     matrix = normalize_matrix_shape(matrix, config.target_shape)
     if config.denoise_radius > 0:
         from damage_gui.data.preprocessing import bilateral_filter
@@ -95,3 +93,9 @@ def read_damage_matrix(path: Path, config: Config | None = None) -> np.ndarray:
             config.denoise_radius,
         )
     return matrix
+
+
+def read_source_matrix(path: Path) -> np.ndarray:
+    """Read the existing format before normalization/denoising."""
+    frame = pd.read_csv(path, sep="\t", encoding="gbk", header=None, skiprows=1)
+    return frame.dropna(axis=1, how="all").to_numpy(dtype=np.float32)
