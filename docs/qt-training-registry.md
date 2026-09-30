@@ -1,0 +1,30 @@
+# Phase 2.3 — Training Workspace & Model Registry
+
+在 `qt-redesign` 完成。保留此前 Prediction、Batch、Validation、History 和科学视图的实现；没有提交或推送。
+
+1. **Training Workspace 架构**：新增独立 `TrainingWorkspace`、`TrainingInspector`、`TrainingSummaryView`。中央提供 Dataset Overview、Training Summary 和一张真实 POD 累积解释方差图；右侧提供等级、模型类型及可折叠高级参数。训练完成保持 Unregistered，提供 Validate Model / Register Model。训练本身不替换应用当前模型。
+2. **Dataset loader 复用**：`dataset_service.inspect_dataset` 使用原 `DamageDataManager.scan_records` 和从原 loader 提取的 `read_source_matrix`。格式仍为项目现有的无扩展名 DamageMatrix_F/M/P_h_…_v_…_deg_… 文件、GBK、首行标题、制表符数据；没有引入另一套格式。后台逐文件检查可读性、有限数值、源尺寸和重复工况，动态统计等级、轴值、样本及网格组合缺口。网格缺口明确不等同于缺失文件，稀疏工况没有被强制补齐。源尺寸与配置的建模尺寸分别展示；核心原有形状归一化保持不变。F/M/P 逐级训练，缺少所选等级或有效工况不足时禁用提交。
+3. **TrainingService 接入**：仍调用 `TrainingService.train → DamageModelService.train_bundle`，没有重写训练算法。新增可选 `record_db=False`，仅让 Qt 统一拥有同一条任务生命周期，默认服务行为不变。报告进入按 job ID 隔离的目录，避免不同训练相互覆盖。部署类型提供 RBF / POD-RBF，纯 POD 是内部降阶层；nearest/linear 实验基线不扩展为本阶段部署选项。暴露真实的 POD 分量、RBF 核/epsilon/smoothing、质心对齐、随机种子与内置留出比例；固定归一化不伪装为可调开关。
+4. **Job lifecycle**：新增 `TrainingWorkflow`，通过现有 TaskManager / TaskAdapter 执行后台工作。PENDING → RUNNING → SUCCESS / FAILED / CANCELLED 全部入库。进度来自核心实际读取、拟合和评估事件，没有编造百分比或 POD 子阶段。终态数据库协调完成后才发布完成事件。协作取消保留原安全边界，不强杀线程；晚到的取消也不会暴露 usable draft。失败与取消不会进入正式生命周期库。训练及模型操作进入共享忙碌锁：科学任务运行时不允许切换模型，已提交任务继续使用提交时捕获的模型。
+5. **Registry 架构**：新增独立 Models 工作区，使用 QTableView + 原 RecordsModel/QAbstractTableModel，支持排序、选择、F/M/P、事实状态及 Model ID 搜索。复用原 `model.lifecycle.ModelRegistry` 的 DRAFT / VALIDATED / ACTIVE / ARCHIVED 规则，并与追溯 `ModelRepository` 关联。生命周期库使用追溯库旁的 `<db stem>_registry.sqlite`，保留既有独立 schema，主追溯库没有新增 schema。正式列表来自生命周期登记记录；metadata-only 训练追溯行不冒充已注册模型。额外区分“应用当前模型”和持久生命周期状态。
+6. **register / activate**：注册由 `ModelRegistryService` 调用原 `model.registry.save_model`、ModelRepository 和生命周期 register。model ID 仍由核心 build_metadata 生成；不制造版本编号。重复正式注册拒绝，文件也不静默覆盖。注册成功更新关联 Training job 的 registration/artifact 信息。激活先后台加载并校验身份，再按既有状态机晋升，随后绑定 Prediction / Batch / Validation 和 Application Bar。DRAFT 晋升使用已有验证证据，不采用质量阈值；既有 ARCHIVED 为终态，仍不重新激活。Validate Draft 只设置验证目标，不自动注册或替换 Prediction 模型。
+7. **legacy compatibility**：保留 Load Existing Model 和原 `load_model`。无 metadata 的模型显示 Legacy / Metadata incomplete，hash/version 不伪造；仍能预测。旧版无身份模型遵循原生命周期规则，不能正式注册；带完整 metadata 的外部模型可显式注册。模型库用当前已加载的 Legacy 行展示事实，不生成虚构 UUID。
+8. **missing-file handling**：正式记录存在但文件不存在时显示 Missing File，激活禁用。元数据、训练 hash、关联任务和验证详情仍可查看。没有添加 Delete。文件主信息只显示文件名，完整路径在 tooltip 中；hash 可从详情选择复制，表格 tooltip 保留完整值。
+9. **metadata**：复用 ModelMetadata、joblib bundle 和 JSON sidecar，保留 ID、创建时间、软件/格式/schema 版本、类型、等级、训练样本、hash 和 code commit。本阶段补齐 metadata.parameters 的真实 seed/test fraction、降噪范围参数和 ROI 配置；没有改变 metadata schema 版本，旧字段兼容。完整提交时 Config 也保存在 Training job details 中。POD 图直接使用已拟合 PCA.explained_variance_ratio_，无虚构 spectrum。训练服务原报告是内置 Random 留出指标，UI 明确标注为 held-out validation，绝不冒充 Training Fit；Raw/Smoothed 并列显示，MRE/P95 为百分比。
+10. **training_data_hash**：完全复用原 `training_data_hash`，覆盖实际交付模型训练记录的工况和源文件内容 hash。Random 交付模型按原语义训练于训练子集，因此 fingerprint 对应训练子集，不把全目录 hash 冒充该值。ModelRepository 支持按 training_data_hash 查询。训练、模型库和 History 均显示完整指纹。没有创建独立 dataset 身份体系。
+11. **Validation linking**：模型详情后台查询同一 model_id 的最近 SUCCESS Validation，显示真实模式、Raw R² / MRE / P95 和范围，并可打开具体 Validation History。查询按 kind/status 在 SQL 中过滤后限量，避免大量预测任务挤掉最新验证。现有验证评估的是重新拟合的方法/配置，保留 Phase 2.2 语义，不声称对不可变已拟合权重的独立测试。
+12. **History integration**：新增 Training filter 与 model_id 过滤，过滤在 SQL 分页前执行。训练详情包括 dataset、等级、类型、Config、status/duration、输出 model ID、注册状态、hash、软件和 commit。模型详情的 Related Jobs 打开同一 ID 的 Training / Prediction / Batch / Validation；验证链接打开具体任务。训练成功但未注册也保留报告与 metadata，正式 registry entry 仍由用户显式创建。
+13. **performance**：见 `outputs/qt_phase23/evidence.json`。在共享 3×3×3、64×64 synthetic fixture 上，真实 POD-RBF K=5 训练：数据检查约 0.023 s，核心训练约 0.149 s，完整训练界面工作流约 0.469 s，模型原子保存约 0.0037 s，registry worker 读取约 0.0014 s。另列 registration/registry workflow elapsed，包含任务排队与 Qt 轮询。没有修改算法以优化计时，没有测峰值内存。此数据不代表生产尺寸性能。
+14. **screenshots**：`outputs/qt_phase23/` 共 23 张，包括 `training_ready_en.png`、`dataset_loaded_en.png`、`training_parameters_en.png`、`training_running_en.png`、`training_complete_en.png`、`model_unregistered_en.png`、`pod_spectrum_en.png`、`registry_list_en.png`、`registry_detail_en.png`、`active_model_en.png`、`registered_prediction_en.png`、`registered_validation_en.png`、`training_history_en.png`、`traceability_detail_en.png`、`registry_validation_link_en.png`、`validation_history_link_en.png`、`training_complete_zh.png`、`registry_detail_zh.png`、`missing_model_en.png`、`legacy_model_en.png`、`training_failed_en.png`、`training_cancelled_en.png`、`invalid_dataset_en.png`。实际数据库位置及贯穿链条的 job/model ID 记录在 evidence.json。
+15. **full tests**：全量回归 257 passed / 1 skipped。新增测试覆盖真实数据检查/无效数据/重复工况、后台训练成功失败取消、原子序列化失败保留原文件、重复注册、加载激活、Legacy、Missing、hash 查询、提交时绑定锁、SQL 过滤后分页，以及真实 Qt Training → Register → Activate → Prediction → Validation → History 的同 ID 链条。现有 CLI、Web、Tk、数值、Prediction、Batch、Validation 回归保留。截图来自真实计算，不依赖私有仿真数据。`git diff --check` 通过。
+16. **known limitations**：未注册 draft bundle 仅保留于当前会话内存；重启后 History 保留指标/metadata/CSV，但不能恢复未注册权重。核心默认 Random 训练交付训练子集模型，没有另加全量训练模式。原取消边界不能中断单次 PCA/RBF 求解。文件主文件/sidecar 各自完整 fsync 后原子发布，两个文件及两套 SQLite 并非一个跨资源事务；中断可能留下未正式注册的完整文件，同 ID 重试会校验并复用，已正式注册的 ID 仍拒绝重复。自动异常退出任务协调、registry 数据库整合/迁移与历史权重恢复未加入。持久 ACTIVE 按等级保存，启动不会自动选择其中一份为应用当前模型。保留旧的 Load Existing Model/Save As 入口，其文件对话框之后的历史加载/保存仍为同步；新 registry 激活/注册和全部训练/检查均为后台。code_commit 仍为现有 HEAD SHA，不代表这些未提交修改的完整代码快照。只做 macOS offscreen GUI 验收，未手动测试 Windows/Linux 原生窗口。
+17. **Phase 2.4 proposal**：优先做启动时中断任务协调、draft artifact 的可恢复保存与生命周期管理、历史结果分页/导出，以及模型跨文件/跨数据库写入的恢复流程。再将旧 Load/Save 入口统一迁入后台。保持 Aim、AutoML、模型排行和自动调参不在该范围。
+
+关键新增文件：`services/dataset_service.py`、`services/model_registry_service.py`、`qt/training_workflow.py`、`qt/panels/training.py`、`qt/panels/model_registry.py`、两枚 SVG 图标、`scripts/capture_qt_training.py`、`tests/test_training_registry.py`、`tests/test_qt_training.py`。更新了 loader、TrainingService、registry、metadata、repositories、Qt main/workflow/history/i18n/theme/rail、共享翻译和工作台导航测试。
+
+复现：
+
+```sh
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_qt_training.py
+.venv/bin/python -m pytest -q
+```
