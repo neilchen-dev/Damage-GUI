@@ -35,7 +35,9 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
         model_tmp = Path(name)
         temporary.append(model_tmp)
         joblib.dump(bundle, model_tmp)
-        with model_tmp.open("rb") as stream:
+        # Windows 的 FlushFileBuffers 要求句柄有写权限，只读 fd 会报
+        # Errno 9（POSIX 允许对只读 fd fsync，故仅在 Windows CI 暴露）。
+        with model_tmp.open("rb+") as stream:
             os.fsync(stream.fileno())
         if metadata is not None:
             fd, name = tempfile.mkstemp(prefix=f".{sidecar.name}.", dir=path.parent)
