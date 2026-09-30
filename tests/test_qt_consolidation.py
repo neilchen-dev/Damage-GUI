@@ -38,6 +38,13 @@ w._navigate('history');assert not w._act_current_run.isEnabled()
 w.activateWindow();app.processEvents();w._act_search.trigger();app.processEvents();assert w.history_workspace.model_filter.hasFocus()
 w._act_inspector.trigger();assert not w.inspector.isVisible();w._act_layout.trigger();assert w.inspector.isVisible()
 w._act_logs.trigger();assert not w._activity.is_collapsed;w._act_logs.trigger();assert w._activity.is_collapsed
+# closeEvent shows a MODAL confirm dialog while the task adapter is busy;
+# that hangs forever under offscreen (no user to answer). Drain first.
+import time
+deadline=time.monotonic()+10
+while w.task_adapter.is_busy() or w.workflow._requests:
+    app.processEvents();time.sleep(.003)
+    assert time.monotonic()<deadline,'adapter still busy at close'
 w.close()
 '''
     result=subprocess.run([sys.executable,'-c',code],env=dict(os.environ,QT_QPA_PLATFORM='offscreen',DAMAGE_GUI_DB=str(tmp_path/'ui.sqlite')),capture_output=True,text=True,timeout=120)
