@@ -32,17 +32,22 @@ web = [
     "pydantic>=2.7,<3",
     "uvicorn>=0.30,<1",
 ]
+desktop-qt = [
+    "PySide6>=6.5,<7",
+]
 
 [project.scripts]
 damage-gui = "damage_gui.desktop:main"
 damage-gui-cli = "damage_gui.cli:main"
 damage-gui-web = "damage_gui.webapp.app:main"
+damage-gui-qt = "damage_gui.qt.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
 damage_gui = [
+    "qt/icons/*.svg",
     "gui/assets/*.ico",
     "gui/assets/*.png",
     "webapp/static/*.html",
@@ -70,4 +75,13 @@ select = [
 [tool.ruff.lint.per-file-ignores]
 # 脚本与测试需要先把 src 注入 sys.path 再导入项目包
 "scripts/*.py" = ["E402"]
+# Qt 重构阶段代码采用紧凑单行风格（发布阶段不做大范围重排，仅保证
+# 语义类规则 F/B/I/UP 全部通过）
+"src/damage_gui/qt/*" = ["E501", "E701", "E702", "E402"]
+"scripts/capture_qt_*.py" = ["E501", "E701", "E702"]
+"scripts/qt_release_acceptance.py" = ["E501"]
+"tests/test_qt_*.py" = ["E501", "E701", "E702"]
+"tests/test_training_registry.py" = ["E501", "E701", "E702"]
+"tests/test_validation_service.py" = ["E701"]
+"tests/test_validation_storage_migration.py" = ["E701"]
 "tests/*.py" = ["E402"]

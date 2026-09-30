@@ -22,7 +22,7 @@ def _jobs_table_sql(table_name: str = "jobs") -> str:
 CREATE TABLE IF NOT EXISTS {table_name} (
     id            TEXT PRIMARY KEY,
     kind          TEXT NOT NULL CHECK (kind IN
-        ('training', 'batch_prediction', 'prediction', 'aim')),
+        ('training', 'batch_prediction', 'prediction', 'aim', 'validation')),
     status        TEXT NOT NULL CHECK (status IN
         ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED')),
     model_id      TEXT REFERENCES models(id),
@@ -107,7 +107,7 @@ def init_database(db_path: str | Path) -> bool:
         path = Path(db_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with closing(connect(path)) as conn:
-            conn.executescript(SCHEMA_SQL)
+            ensure_schema(conn)
             conn.commit()
         return True
     except sqlite3.Error:
@@ -122,10 +122,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     """写入操作前确保表结构存在（CREATE IF NOT EXISTS，幂等）。"""
     conn.executescript(SCHEMA_SQL)
     _migrate_jobs_kind_constraint(conn)
+    if conn.execute("PRAGMA user_version").fetchone()[0] < 7:
+        conn.execute("PRAGMA user_version=7")
 
 
 def _migrate_jobs_kind_constraint(conn: sqlite3.Connection) -> None:
-    """Add prediction/AIM job kinds without dropping existing traceability.
+    """Add prediction/AIM/validation job kinds without dropping existing traceability.
 
     SQLite cannot alter a CHECK constraint in place.  The rebuild is narrowly
     scoped to the existing jobs table and copies every existing column/value.
@@ -134,7 +136,7 @@ def _migrate_jobs_kind_constraint(conn: sqlite3.Connection) -> None:
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
     ).fetchone()
     sql = str(row[0]) if row is not None and row[0] is not None else ""
-    if "'prediction'" in sql and "'aim'" in sql:
+    if "'prediction'" in sql and "'aim'" in sql and "'validation'" in sql:
         return
 
     conn.commit()

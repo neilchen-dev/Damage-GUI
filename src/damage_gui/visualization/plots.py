@@ -158,7 +158,7 @@ def _add_percent_colorbar(figure, image, axis, label: str, zero_center: bool = F
         colorbar.set_ticklabels([f"{tick * 100:.0f}%" for tick in ticks])
 
 
-def render_heatmaps(
+def _render_heatmaps(
     true_matrix: np.ndarray | None,
     pred_matrix: np.ndarray,
     display_threshold: float,
@@ -218,6 +218,30 @@ def render_heatmaps(
     _style_heatmap_axis(axes[2], "误差 (预测 − 真实)", show_y_axis=False)
     _add_percent_colorbar(figure, image, axes[2], "误差", zero_center=True)
 
+    return figure
+
+
+def render_heatmaps(
+    true_matrix: np.ndarray | None,
+    pred_matrix: np.ndarray,
+    display_threshold: float,
+    config: Config | None = None,
+    *,
+    theme: str | None = None,
+    language: str = "zh",
+) -> Figure:
+    """Render heatmaps with an optional headless-safe viewport theme.
+
+    The default preserves the legacy frontend/export appearance. ``theme="dark"``
+    changes only display colors, labels and subplot placement, never input data,
+    crop bounds, extents or numerical normalization.
+    """
+    if theme not in (None, "dark"):
+        raise ValueError(f"Unsupported heatmap theme: {theme}")
+    figure = _render_heatmaps(true_matrix, pred_matrix, display_threshold, config)
+    if theme == "dark":
+        from damage_gui.visualization.scientific_theme import apply_scientific_theme
+        apply_scientific_theme(figure, language)
     return figure
 
 

@@ -54,11 +54,20 @@ class ModelRepository:
                 ensure_schema(conn)
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO models (
+                    INSERT INTO models (
                         id, created_at, app_version, model_type, damage_level,
                         training_samples, training_data_hash, code_commit,
                         parameters_json, validation_json, artifact_path
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        created_at=excluded.created_at, app_version=excluded.app_version,
+                        model_type=excluded.model_type, damage_level=excluded.damage_level,
+                        training_samples=excluded.training_samples,
+                        training_data_hash=excluded.training_data_hash,
+                        code_commit=excluded.code_commit,
+                        parameters_json=excluded.parameters_json,
+                        validation_json=excluded.validation_json,
+                        artifact_path=COALESCE(excluded.artifact_path, models.artifact_path)
                     """,
                     (
                         metadata.model_id, metadata.created_at, metadata.app_version,
@@ -75,16 +84,28 @@ class ModelRepository:
             _fail("写入 models 表", self.db_path, exc)
             return False
 
-    def list_models(self) -> list[dict[str, Any]] | None:
+    def list_models(self, *, training_data_hash: str = "") -> list[dict[str, Any]] | None:
         try:
             with closing(connect(self.db_path)) as conn:
                 ensure_schema(conn)
                 rows = conn.execute(
-                    "SELECT * FROM models ORDER BY created_at DESC"
+                    "SELECT * FROM models WHERE (? = '' OR training_data_hash = ?) "
+                    "ORDER BY created_at DESC",
+                    (training_data_hash, training_data_hash)
                 ).fetchall()
             return [dict(row) for row in rows]
         except sqlite3.Error as exc:
             _fail("查询 models 表", self.db_path, exc)
+            return None
+
+    def get_model(self, model_id: str) -> dict[str, Any] | None:
+        try:
+            with closing(connect(self.db_path)) as conn:
+                ensure_schema(conn)
+                row = conn.execute("SELECT * FROM models WHERE id = ?", (model_id,)).fetchone()
+            return dict(row) if row is not None else None
+        except sqlite3.Error as exc:
+            _fail("读取 model metadata", self.db_path, exc)
             return None
 
 
@@ -216,7 +237,8 @@ class JobRepository:
     def recent_jobs(self, limit: int = 20) -> list[dict[str, Any]] | None:
         return self.list_jobs(limit=limit, offset=0)
 
-    def list_jobs(self, *, limit: int = 20, offset: int = 0) -> list[dict[str, Any]] | None:
+    def list_jobs(self, *, limit: int = 20, offset: int = 0, kind: str = "",
+                  status: str = "", model_id: str = "") -> list[dict[str, Any]] | None:
         """Read-only paginated job history using the existing schema."""
         limit = max(0, min(int(limit), 1000))
         offset = max(0, int(offset))
@@ -224,8 +246,10 @@ class JobRepository:
             with closing(connect(self.db_path)) as conn:
                 ensure_schema(conn)
                 rows = conn.execute(
-                    "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                    (limit, offset),
+                    "SELECT * FROM jobs WHERE (? = '' OR kind = ?) AND (? = '' OR status = ?) "
+                    "AND (? = '' OR model_id = ?) "
+                    "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                    (kind, kind, status, status, model_id, model_id, limit, offset),
                 ).fetchall()
             return [dict(row) for row in rows]
         except sqlite3.Error as exc:
@@ -289,3 +313,19 @@ class PredictionResultRepository:
         except sqlite3.Error as exc:
             _fail(f"写入 prediction_results 表（job={job_id}）", self.db_path, exc)
             return False
+
+    def list_results(self, job_id: str, *, limit: int = 1000,
+                     offset: int = 0) -> list[dict[str, Any]] | None:
+        """Read a bounded page of persisted result rows for a traceability job."""
+        try:
+            with closing(connect(self.db_path)) as conn:
+                ensure_schema(conn)
+                rows = conn.execute(
+                    "SELECT * FROM prediction_results WHERE job_id = ? "
+                    "ORDER BY id LIMIT ? OFFSET ?",
+                    (job_id, max(0, min(int(limit), 1000)), max(0, int(offset))),
+                ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as exc:
+            _fail("读取 prediction_results", self.db_path, exc)
+            return None

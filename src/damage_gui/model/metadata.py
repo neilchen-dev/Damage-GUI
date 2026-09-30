@@ -251,10 +251,15 @@ def build_metadata(
     """训练完成后构建模型元数据。"""
     parameters: dict[str, Any] = {
         "validation_mode": validation_mode,
+        "random_state": config.random_state,
+        "test_size": config.test_size,
         "rbf_kernel": config.rbf_kernel,
         "rbf_smoothing": config.rbf_smoothing,
         "align_patterns": config.align_patterns,
         "denoise_sigma_spatial": config.denoise_sigma_spatial,
+        "denoise_sigma_range": config.denoise_sigma_range,
+        "use_roi": config.use_roi,
+        "roi_bounds": [config.roi_x_min, config.roi_x_max, config.roi_y_min, config.roi_y_max],
         "denoise_radius": config.denoise_radius,
         "eval_smoothing_sigma": config.eval_smoothing_sigma,
         "target_shape": list(config.target_shape),
