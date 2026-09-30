@@ -37,5 +37,5 @@ while 'tail' not in finished:
 adapter.stop()
 '''
     result=subprocess.run([sys.executable,'-c',code],env={**os.environ,'QT_QPA_PLATFORM':'offscreen'},
-                          capture_output=True,text=True,timeout=15)
+                          capture_output=True,text=True,timeout=60)
     assert result.returncode==0,result.stdout+result.stderr

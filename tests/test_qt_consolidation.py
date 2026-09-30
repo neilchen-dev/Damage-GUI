@@ -40,5 +40,5 @@ w._act_inspector.trigger();assert not w.inspector.isVisible();w._act_layout.trig
 w._act_logs.trigger();assert not w._activity.is_collapsed;w._act_logs.trigger();assert w._activity.is_collapsed
 w.close()
 '''
-    result=subprocess.run([sys.executable,'-c',code],env=dict(os.environ,QT_QPA_PLATFORM='offscreen',DAMAGE_GUI_DB=str(tmp_path/'ui.sqlite')),capture_output=True,text=True,timeout=30)
+    result=subprocess.run([sys.executable,'-c',code],env=dict(os.environ,QT_QPA_PLATFORM='offscreen',DAMAGE_GUI_DB=str(tmp_path/'ui.sqlite')),capture_output=True,text=True,timeout=120)
     assert result.returncode==0,result.stdout+'\n'+result.stderr

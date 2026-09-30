@@ -41,9 +41,12 @@ jobs:
 
       # Web tests are optional for the desktop runtime but are part of CI.
       # Hypothesis property-based tests (tests/test_properties.py) require the
-      # [test] extra, which is not part of the runtime requirements.txt.
-      - name: Install optional Web and test dependencies
-        run: pip install -e ".[web,test]"
+      # [test] extra. The [desktop-qt] extra is needed because unittest
+      # discovery imports every tests/test_*.py file; the pytest-style Qt
+      # suites are imported (not executed) here and skip cleanly only when
+      # PySide6/matplotlib are importable.
+      - name: Install optional Web, Qt, and test dependencies
+        run: pip install -e ".[desktop-qt,web,test]"
 
       # 含单元测试与数值回归测试（Windows/Linux 双平台黄金值对比）
       - name: Run unit and numerical regression tests
@@ -78,7 +81,15 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
-        run: python -m pytest tests/test_qt_workbench.py tests/test_qt_batch_workflow.py tests/test_qt_consolidation.py tests/test_qt_prediction_traceability.py tests/test_qt_training.py tests/test_qt_validation.py tests/test_scientific_theme.py -q
+        run: python -m pytest tests/test_qt_workbench.py tests/test_qt_batch_workflow.py tests/test_qt_consolidation.py tests/test_qt_prediction_traceability.py tests/test_qt_training.py tests/test_qt_validation.py tests/test_scientific_theme.py -q --junitxml=qt-smoke-junit.xml
+
+      - name: Upload test report (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qt-smoke-junit
+          path: qt-smoke-junit.xml
+          if-no-files-found: ignore
 
   build:
     # Phase 2.5: the shipped desktop product is the Qt app (damage-gui-qt),
