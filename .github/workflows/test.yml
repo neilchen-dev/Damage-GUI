@@ -48,11 +48,21 @@ jobs:
       - name: Install optional Web, Qt, and test dependencies
         run: pip install -e ".[desktop-qt,web,test]"
 
-      # 含单元测试与数值回归测试（Windows/Linux 双平台黄金值对比）
+      # 含单元测试与数值回归测试（Windows/Linux 双平台黄金值对比）。
+      # 失败时把完整输出附加到 job summary，便于离线诊断（日志可能截断）。
       - name: Run unit and numerical regression tests
         env:
           PYTHONPATH: src
-        run: python -m unittest discover -s tests -v
+          PYTHONIOENCODING: utf8
+          PYTHONUTF8: "1"
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v 2>&1 | Tee-Object -FilePath unittest-output.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content -Raw unittest-output.log |
+              Out-File -Append $env:GITHUB_STEP_SUMMARY -Encoding utf8
+            exit 1
+          }
 
   qt-smoke:
     # Phase 2.5: headless Qt desktop tests (offscreen platform). These are
