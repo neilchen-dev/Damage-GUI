@@ -79,7 +79,15 @@ def main(output):
         window._activity.expand()
         shot('prediction_success_activity_en')
         history=detail(high_id)
-        assert 'training_data_hash' in history.detail.toPlainText()
+        try:
+            wait(lambda:'training_data_hash' in history.detail.toPlainText(),timeout=10)
+        except AssertionError:
+            # CI-only flake diagnostics: dump persisted rows + rendered text.
+            with closing(sqlite3.connect(db)) as connection:
+                print('DIAG jobs:',[dict(row) for row in connection.execute('SELECT id,kind,status,model_id FROM jobs')])
+                print('DIAG models:',[dict(row) for row in connection.execute('SELECT id,artifact_path FROM models')])
+            print('DIAG detail:',history.detail.toPlainText())
+            raise
         shot('prediction_high_history_en')
         low_id,low=predict(2,150,20)
         assert low.ood_report.level=='low'
