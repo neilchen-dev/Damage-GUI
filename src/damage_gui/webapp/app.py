@@ -103,10 +103,13 @@ def create_app(
     api_token = validate_token(api_token or os.environ.get("DAMAGE_GUI_API_TOKEN") or None)
     rate_limit = int(os.environ.get("DAMAGE_GUI_RATE_LIMIT", "60"))
     max_compute = int(os.environ.get("DAMAGE_GUI_MAX_COMPUTE", "2"))
+    model_cache_size = int(os.environ.get("DAMAGE_GUI_MODEL_CACHE_SIZE", "2"))
     max_result_bytes = int(os.environ.get("DAMAGE_GUI_MAX_RESULT_BYTES", max_result_bytes))
-    if max_result_bytes <= 0 or cleanup_interval <= 0 or rate_limit <= 0 or max_compute <= 0:
+    if (max_result_bytes <= 0 or cleanup_interval <= 0 or rate_limit <= 0
+            or max_compute <= 0 or model_cache_size <= 0):
         raise ValueError(
-            "Result quota, cleanup interval, rate limit and concurrency must be positive"
+            "Result quota, cleanup interval, rate limit, concurrency and model cache "
+            "must be positive"
         )
     settings = WebRuntimeSettings.from_env()
     resolved_model_dir = Path(model_dir).resolve() if model_dir is not None else settings.model_dir
@@ -137,6 +140,7 @@ def create_app(
         model_manager=model_manager or ModelManager(
             resolved_model_dir,
             default_model_id=default_model_id or settings.default_model_id,
+            max_cached_models=model_cache_size,
         ),
         result_store=effective_result_store,
         db_path=resolved_db_path,

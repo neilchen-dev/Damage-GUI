@@ -333,7 +333,10 @@ numeric representation.
 
 ## Small-memory hosts
 
-Set `DAMAGE_GUI_MAX_COMPUTE=1` to serialize synchronous compute requests.
+Set `DAMAGE_GUI_MAX_COMPUTE=1` to serialize synchronous compute requests, and
+`DAMAGE_GUI_MODEL_CACHE_SIZE=1` to retain only one loaded model. Cache references
+are evicted before another model is deserialized; in-flight work can still hold
+its own model reference.
 On a host with limited RAM, configure container limits in a private Compose
 override, for example:
 
@@ -346,6 +349,7 @@ services:
     pids_limit: 128
     environment:
       DAMAGE_GUI_MAX_COMPUTE: "1"
+      DAMAGE_GUI_MODEL_CACHE_SIZE: "1"
       OPENBLAS_NUM_THREADS: "1"
       OMP_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"

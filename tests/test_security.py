@@ -363,3 +363,27 @@ def test_web_compute_concurrency_can_be_reduced(web_app, monkeypatch):
     monkeypatch.setenv("DAMAGE_GUI_MAX_COMPUTE", "0")
     with pytest.raises(ValueError, match="concurrency"):
         create_app(api_token=TOKEN)
+
+
+def test_model_cache_evicts_before_loading_another_bundle(tmp_path):
+    from damage_gui.webapp.dependencies import ModelManager
+
+    for name in ["first", "second"]:
+        (tmp_path / f"{name}.joblib").write_bytes(b"server-owned")
+    calls = []
+
+    def loader(path):
+        # The old reference must already be released when the loader runs.
+        assert not manager._cache
+        calls.append(path.stem)
+        return object()
+
+    manager = ModelManager(tmp_path, loader=loader, max_cached_models=1)
+    first = manager.get_bundle("first")[1]
+    assert manager.get_bundle("first")[1] is first
+    manager.get_bundle("second")
+    assert list(manager._cache) == ["second"]
+    assert manager.get_bundle("first")[1] is not first
+    assert calls == ["first", "second", "first"]
+    with pytest.raises(ValueError, match="cache"):
+        ModelManager(tmp_path, max_cached_models=0)
