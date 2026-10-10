@@ -330,3 +330,36 @@ volume.
 Batch/report CSV exports prefix potentially executable text cells with an
 apostrophe, including user-provided job identifiers. Numeric fields retain their
 numeric representation.
+
+## Small-memory hosts
+
+Set `DAMAGE_GUI_MAX_COMPUTE=1` to serialize synchronous compute requests.
+On a host with limited RAM, configure container limits in a private Compose
+override, for example:
+
+```yaml
+services:
+  app:
+    mem_limit: 384m
+    memswap_limit: 384m
+    cpus: 0.75
+    pids_limit: 128
+    environment:
+      DAMAGE_GUI_MAX_COMPUTE: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      BLIS_NUM_THREADS: "1"
+```
+
+With equal memory and memory-plus-swap limits, the container cannot swap beyond
+its RAM budget. Choose a limit that leaves headroom for the host and other
+services. Confirm it supports the actual models with sequential smoke requests.
+Do not run a second unrestricted model server for staging on the same small host;
+stop the old service before starting the new image, retaining a rollback tag.
+
+When using a host reverse proxy, configure Uvicorn's `FORWARDED_ALLOW_IPS` with
+only the trusted proxy source address (for a published Docker port this can be
+the Docker network gateway). This ensures HTTPS Origin checks and Secure session
+cookies work without trusting arbitrary forwarded headers.

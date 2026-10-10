@@ -339,3 +339,27 @@ def test_compute_rate_limit_recovers_after_window():
         assert middleware._retry_after() > 0
     with patch("damage_gui.webapp.security.time.monotonic", return_value=161):
         assert middleware._retry_after() == 0
+
+
+def test_web_compute_concurrency_can_be_reduced(web_app, monkeypatch):
+    from damage_gui.webapp.app import create_app
+    from damage_gui.webapp.security import ApiSecurityMiddleware
+
+    monkeypatch.setenv("DAMAGE_GUI_MAX_COMPUTE", "1")
+    context = web_app.state.web_context
+    app = create_app(
+        api_token=TOKEN,
+        db_path=context.db_path,
+        data_dir=context.data_dir,
+        model_manager=context.model_manager,
+    )
+    try:
+        middleware = next(
+            entry for entry in app.user_middleware if entry.cls is ApiSecurityMiddleware
+        )
+        assert middleware.kwargs["max_compute"] == 1
+    finally:
+        app.state.web_jobs.shutdown()
+    monkeypatch.setenv("DAMAGE_GUI_MAX_COMPUTE", "0")
+    with pytest.raises(ValueError, match="concurrency"):
+        create_app(api_token=TOKEN)

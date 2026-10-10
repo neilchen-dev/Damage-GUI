@@ -102,9 +102,12 @@ def create_app(
 
     api_token = validate_token(api_token or os.environ.get("DAMAGE_GUI_API_TOKEN") or None)
     rate_limit = int(os.environ.get("DAMAGE_GUI_RATE_LIMIT", "60"))
+    max_compute = int(os.environ.get("DAMAGE_GUI_MAX_COMPUTE", "2"))
     max_result_bytes = int(os.environ.get("DAMAGE_GUI_MAX_RESULT_BYTES", max_result_bytes))
-    if max_result_bytes <= 0 or cleanup_interval <= 0 or rate_limit <= 0:
-        raise ValueError("Result quota, cleanup interval and rate limit must be positive")
+    if max_result_bytes <= 0 or cleanup_interval <= 0 or rate_limit <= 0 or max_compute <= 0:
+        raise ValueError(
+            "Result quota, cleanup interval, rate limit and concurrency must be positive"
+        )
     settings = WebRuntimeSettings.from_env()
     resolved_model_dir = Path(model_dir).resolve() if model_dir is not None else settings.model_dir
     resolved_db_path = (
@@ -172,7 +175,8 @@ def create_app(
     application.state.web_jobs = web_jobs
     application.add_middleware(RequestSizeLimitMiddleware)
     application.add_middleware(ApiSecurityMiddleware, token=api_token, context=context,
-                               max_result_bytes=max_result_bytes, per_minute=rate_limit)
+                               max_result_bytes=max_result_bytes, per_minute=rate_limit,
+                               max_compute=max_compute)
 
     # The Workbench is a static, same-origin client of this API.  Keeping the
     # assets here means the optional web extra remains a single deployable
