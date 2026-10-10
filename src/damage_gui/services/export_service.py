@@ -52,5 +52,16 @@ def export_rows_csv(
     """Export structured rows for batch/report consumers."""
     output_path = Path(path)
     frame = pd.DataFrame(list(rows), columns=list(columns))
+    # CSV quoting does not disable spreadsheet formulas. Escape untrusted text
+    # while preserving numeric cells (including negative numbers).
+    def safe_cell(value):
+        if isinstance(value, str):
+            probe = value.lstrip()
+            if probe.startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")):
+                return "'" + value
+        return value
+
+    for column in frame.columns:
+        frame[column] = frame[column].map(safe_cell)
     frame.to_csv(output_path, index=False, encoding="utf-8-sig")
     return output_path

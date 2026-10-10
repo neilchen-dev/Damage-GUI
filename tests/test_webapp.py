@@ -47,11 +47,14 @@ class WebApiTests(unittest.TestCase):
             cls.db_path.unlink()
         manager = ModelManager(initial_bundles={"test-model": cls.bundle})
         cls.app = create_app(
+            api_token="test-access-token-0123456789abcdef",
             model_manager=manager,
             db_path=cls.db_path,
             data_dir=cls.data_dir,
         )
-        cls.client = TestClient(cls.app)
+        cls.client = TestClient(
+            cls.app, headers={"Authorization": "Bearer test-access-token-0123456789abcdef"}
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -159,11 +162,14 @@ class WebApiTests(unittest.TestCase):
         self.assertGreater(len(csv.content), 100)
 
         restarted = create_app(
+            api_token="test-access-token-0123456789abcdef",
             model_manager=ModelManager(initial_bundles={"test-model": self.bundle}),
             db_path=self.db_path,
             data_dir=self.data_dir,
         )
-        restarted_client = TestClient(restarted)
+        restarted_client = TestClient(
+            restarted, headers={"Authorization": "Bearer test-access-token-0123456789abcdef"}
+        )
         reopened = restarted_client.get(f"/api/results/{run_id}")
         self.assertEqual(reopened.status_code, 200)
         self.assertEqual(reopened.json()["run_id"], run_id)
@@ -296,6 +302,7 @@ class WebApiTests(unittest.TestCase):
         )
         self.assertIsNotNone(stale_id)
         restarted = create_app(
+            api_token="test-access-token-0123456789abcdef",
             model_manager=ModelManager(initial_bundles={"test-model": self.bundle}),
             db_path=self.db_path,
             data_dir=self.data_dir,

@@ -46,8 +46,9 @@ Supported settings include:
 - `DAMAGE_GUI_DOMAIN` — Nginx TLS/server-name template value.
 
 `DAMAGE_GUI_WEB_RESULT_DIR`, `DAMAGE_GUI_WEB_HOST`, and
-`DAMAGE_GUI_WEB_PORT` remain accepted as compatibility aliases. No secrets are
-required by this application and none belong in `.env` committed to source.
+`DAMAGE_GUI_WEB_PORT` remain accepted as compatibility aliases. Configure the
+required `DAMAGE_GUI_API_TOKEN` in the private deployment environment; never
+commit `.env` or model signing keys to source control.
 
 ## First deployment
 
@@ -158,7 +159,7 @@ Run these through the public HTTPS origin, not the internal app port:
 curl --fail https://damage.example.com/api/health
 curl --fail https://damage.example.com/
 curl --fail https://damage.example.com/static/app.js
-curl --fail https://damage.example.com/api/models
+curl --fail -H "Authorization: Bearer $DAMAGE_GUI_API_TOKEN" https://damage.example.com/api/models
 ```
 
 With a valid model, exercise prediction and its artifacts:
@@ -166,12 +167,13 @@ With a valid model, exercise prediction and its artifacts:
 ```sh
 prediction=$(curl --fail --silent -X POST \
   'https://damage.example.com/api/predict' \
+  -H "Authorization: Bearer $DAMAGE_GUI_API_TOKEN" \
   -H 'content-type: application/json' \
   -d '{"h":2,"v":200,"deg":10}')
 run_id=$(printf '%s' "$prediction" | python3 -c \
   'import json,sys; print(json.load(sys.stdin)["run_id"])')
-curl --fail "https://damage.example.com/api/results/$run_id/png" -o result.png
-curl --fail "https://damage.example.com/api/results/$run_id/csv" -o result.csv
+curl --fail -H "Authorization: Bearer $DAMAGE_GUI_API_TOKEN" "https://damage.example.com/api/results/$run_id/png" -o result.png
+curl --fail -H "Authorization: Bearer $DAMAGE_GUI_API_TOKEN" "https://damage.example.com/api/results/$run_id/csv" -o result.csv
 ```
 
 Batch submission returns immediately; poll its job ID and then download the
@@ -180,11 +182,12 @@ CSV:
 ```sh
 job_id=$(curl --fail --silent -X POST \
   'https://damage.example.com/api/batch' \
+  -H "Authorization: Bearer $DAMAGE_GUI_API_TOKEN" \
   -H 'content-type: text/csv' \
   -H 'X-Filename: smoke.csv' \
   --data-binary $'job_id,h,v,deg,level\nsmoke,2,200,10,F\n' \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
-curl --fail "https://damage.example.com/api/jobs/$job_id"
+curl --fail -H "Authorization: Bearer $DAMAGE_GUI_API_TOKEN" "https://damage.example.com/api/jobs/$job_id"
 ```
 
 ## Shutdown, restart, and persistence
@@ -257,7 +260,73 @@ automatic rollback.
 
 ## Operational boundaries
 
-This phase deliberately does not add authentication, online training, Redis,
-Celery, PostgreSQL, Kubernetes, or distributed workers. The current workload
+The API requires a shared operator access token. This phase does not add
+per-user accounts, online training, Redis, Celery, PostgreSQL, Kubernetes,
+or distributed workers. The current workload
 is served by one app process behind Nginx; scale-out requires a separately
 designed shared job/result service before adding workers or replicas.
+
+## Security configuration and model migration
+
+Set `DAMAGE_GUI_API_TOKEN` to a random secret of at least 32 characters before
+starting the Web service. Compose and the production entrypoint reject a missing
+token. An embedded `create_app()` without a token serves static assets and health
+checks, but denies all other API requests. Generate a token with:
+
+```sh
+python -c 'import secrets; print(secrets.token_urlsafe(32))'
+```
+
+API clients send `Authorization: Bearer <token>`. The Workbench asks for the token
+on its first protected request and exchanges it for an eight-hour HttpOnly,
+SameSite=Strict session cookie; HTTPS sessions also set Secure. Tokens are never
+put in URLs or browser storage. Use HTTPS for remote access. `DELETE /api/session`
+logs out the browser. Changing the operator token invalidates all sessions.
+The token grants access to the shared workspace and its jobs; it does not create
+separate user workspaces. Protected API responses use `Cache-Control: no-store`.
+
+AIM probability kernels are limited to 1,000,000 elements before allocation,
+and the Web adapter admits at most two concurrent compute requests. The shared
+workspace compute limit defaults to 60 requests per minute and is configurable
+with `DAMAGE_GUI_RATE_LIMIT`. Oversized
+spread values return 422, and excess concurrent computation returns 429.
+
+Expired prediction and batch artifacts are cleaned every 60 seconds while the
+server is running. Active batch output files are excluded from cleanup.
+`DAMAGE_GUI_MAX_RESULT_BYTES` defaults to 1 GiB: when existing managed result
+files reach that threshold, new predict/AIM/batch requests return 507. This is an
+admission threshold, not an atomic filesystem quota: admitted requests can finish
+writing above it. Use a filesystem/container storage quota if a hard capacity
+limit is required. Downloading existing results and viewing history still work.
+SQLite history is retained separately and is not purged by artifact retention.
+
+New models saved by DamageLab include a `<model>.joblib.sig` HMAC-SHA256 signature.
+Loading verifies the signature before joblib deserialization, and deserializes
+exactly the verified bytes. Unsigned, modified, or foreign-key models are rejected.
+The key defaults to the private user-data directory (`DamageLab/model-signing.key`)
+and is created on first save. Set `DAMAGE_GUI_MODEL_KEY_FILE` to use an explicit
+private key path. Keep the 32-byte key secret and separate from model downloads;
+anyone with it can authorize executable models. HMAC establishes a trusted source,
+not a sandbox for malicious code signed by that source.
+
+For an independently verified legacy model, an administrator can sign its bytes
+without deserializing it:
+
+```sh
+DAMAGE_GUI_MODEL_KEY_FILE=/private/model-signing.key \
+  python scripts/sign_model.py /trusted/model.joblib --approve-trusted-source
+```
+
+Do not sign an unknown downloaded model just to bypass a load error. Transfer the
+model and `.sig` together; provision the trusted key through a separate private
+channel. Back up the key securely to keep saved models loadable after migration.
+In Compose the service expects the key at
+`/var/lib/damagelab/db/model-signing.key`; provision it in the database volume,
+readable by UID 10001 with mode 0600, before loading existing signed models.
+Use the same key to sign the models offline. The read-only model volume must
+include their `.sig` files. Never commit the key to Git or put it in the model
+volume.
+
+Batch/report CSV exports prefix potentially executable text cells with an
+apostrophe, including user-provided job identifiers. Numeric fields retain their
+numeric representation.

@@ -1,9 +1,10 @@
 """FastAPI application factory and optional ``damage-gui-web`` entrypoint."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from damage_gui import __version__
@@ -87,6 +88,9 @@ def create_app(
     default_model_id: str | None = None,
     model_manager: ModelManager | None = None,
     result_store: ResultStore | None = None,
+    api_token: str | None = None,
+    max_result_bytes: int = 1024**3,
+    cleanup_interval: float = 60.0,
 ) -> FastAPI:
     """Create the independent web application without creating a Tk root."""
     if FastAPI is None:
@@ -94,6 +98,13 @@ def create_app(
             "Web dependencies are not installed; install damage-gui[web] to use FastAPI"
         )
 
+    from damage_gui.webapp.security import ApiSecurityMiddleware, validate_token
+
+    api_token = validate_token(api_token or os.environ.get("DAMAGE_GUI_API_TOKEN") or None)
+    rate_limit = int(os.environ.get("DAMAGE_GUI_RATE_LIMIT", "60"))
+    max_result_bytes = int(os.environ.get("DAMAGE_GUI_MAX_RESULT_BYTES", max_result_bytes))
+    if max_result_bytes <= 0 or cleanup_interval <= 0 or rate_limit <= 0:
+        raise ValueError("Result quota, cleanup interval and rate limit must be positive")
     settings = WebRuntimeSettings.from_env()
     resolved_model_dir = Path(model_dir).resolve() if model_dir is not None else settings.model_dir
     resolved_db_path = (
@@ -133,11 +144,21 @@ def create_app(
 
     web_jobs = WebJobManager(context)
 
+    async def cleanup_results():
+        while True:
+            await asyncio.sleep(cleanup_interval)
+            await asyncio.to_thread(context.result_store._cleanup_old_artifacts)
+            await asyncio.to_thread(web_jobs._cleanup_old_batch_artifacts)
+
     @asynccontextmanager
     async def lifespan(_application):
+        cleanup = asyncio.create_task(cleanup_results())
         try:
             yield
         finally:
+            cleanup.cancel()
+            with suppress(asyncio.CancelledError):
+                await cleanup
             web_jobs.shutdown()
 
     application = FastAPI(
@@ -150,6 +171,8 @@ def create_app(
     application.state.web_context = context
     application.state.web_jobs = web_jobs
     application.add_middleware(RequestSizeLimitMiddleware)
+    application.add_middleware(ApiSecurityMiddleware, token=api_token, context=context,
+                               max_result_bytes=max_result_bytes, per_minute=rate_limit)
 
     # The Workbench is a static, same-origin client of this API.  Keeping the
     # assets here means the optional web extra remains a single deployable

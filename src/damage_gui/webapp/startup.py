@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from pathlib import Path
 
@@ -45,6 +46,10 @@ def validate_startup(settings: WebRuntimeSettings | None = None) -> WebRuntimeSe
     enough to catch a bad configured model ID without adding model load cost to
     process startup.
     """
+    from damage_gui.webapp.security import validate_token
+
+    if not validate_token(os.environ.get("DAMAGE_GUI_API_TOKEN") or None):
+        raise RuntimeError("DAMAGE_GUI_API_TOKEN is required (at least 32 characters)")
     settings = settings or WebRuntimeSettings.from_env()
     _ensure_directory(settings.home, "DAMAGE_GUI_HOME")
     _ensure_directory(settings.db_path.parent, "database directory")

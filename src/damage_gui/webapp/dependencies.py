@@ -384,7 +384,7 @@ class ResultStore:
         cutoff = datetime.now(timezone.utc).timestamp() - self.retention_days * 86400
         try:
             for child in root.iterdir():
-                if child.is_dir() and child.stat().st_mtime < cutoff:
+                if not child.is_symlink() and child.is_dir() and child.stat().st_mtime < cutoff:
                     shutil.rmtree(child, ignore_errors=True)
         except OSError:
             logger.warning("Unable to clean old web result artifacts")

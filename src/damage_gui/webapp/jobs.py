@@ -325,11 +325,15 @@ class WebJobManager:
             return
         retention_days = max(1, int(getattr(self.context, "retention_days", 7)))
         cutoff = datetime.now(timezone.utc).timestamp() - retention_days * 86400
+        with self._lock:
+            active_outputs = {job.output_path for job in self._jobs.values()}
         for directory in (root / "batches", root / "uploads"):
             if not directory.is_dir():
                 continue
             try:
                 for child in directory.iterdir():
+                    if child.is_symlink() or child in active_outputs:
+                        continue
                     if child.stat().st_mtime < cutoff:
                         if child.is_dir():
                             shutil.rmtree(child, ignore_errors=True)

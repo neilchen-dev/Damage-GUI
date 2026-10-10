@@ -5,6 +5,10 @@ services:
       dockerfile: Dockerfile
     image: ${DAMAGE_GUI_IMAGE:-damagelab-web:2.1.0}
     environment:
+      DAMAGE_GUI_API_TOKEN: ${DAMAGE_GUI_API_TOKEN:?Set a random access token of at least 32 characters}
+      DAMAGE_GUI_MODEL_KEY_FILE: /var/lib/damagelab/db/model-signing.key
+      DAMAGE_GUI_RATE_LIMIT: ${DAMAGE_GUI_RATE_LIMIT:-60}
+      DAMAGE_GUI_MAX_RESULT_BYTES: ${DAMAGE_GUI_MAX_RESULT_BYTES:-1073741824}
       DAMAGE_GUI_HOME: /var/lib/damagelab
       DAMAGE_GUI_DB: /var/lib/damagelab/db/damage_gui.db
       DAMAGE_GUI_MODEL_DIR: /var/lib/damagelab/models
