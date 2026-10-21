@@ -91,7 +91,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: src
-        run: python -m pytest tests/test_qt_workbench.py tests/test_qt_batch_workflow.py tests/test_qt_consolidation.py tests/test_qt_prediction_traceability.py tests/test_qt_training.py tests/test_qt_validation.py tests/test_scientific_theme.py -q --junitxml=qt-smoke-junit.xml
+        run: python -m pytest tests/test_qt_workbench.py tests/test_qt_batch_workflow.py tests/test_qt_consolidation.py tests/test_qt_prediction_traceability.py tests/test_qt_training.py tests/test_qt_validation.py tests/test_qt_state_reset.py tests/test_scientific_theme.py -q --junitxml=qt-smoke-junit.xml
 
       - name: Upload test report (always)
         if: always()
@@ -115,7 +115,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt PySide6 "pyinstaller>=6.0,<7"
+        run: pip install -r requirements.txt -e ".[desktop-qt]" "pyinstaller>=6.0,<7"
 
       - name: Build Windows Qt release package
         shell: cmd

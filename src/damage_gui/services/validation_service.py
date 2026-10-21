@@ -35,6 +35,7 @@ class ValidationService:
                                              pod_n_components=config.pod_n_components,
                                              held_out_value=held_out_value,
                                              evaluation_observer=observe,
+                                             evaluation_only=True,
                                              progress=progress, cancel_check=cancel_check)
             accuracy, conditions = validated.accuracy_report, validated.condition_report
         except OperationCancelled:

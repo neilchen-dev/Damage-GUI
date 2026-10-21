@@ -1,6 +1,7 @@
 """Artifact, dataset and traceability contracts independent of Qt."""
 import dataclasses
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -54,6 +55,30 @@ def test_atomic_save_preserves_existing_and_cleans_failed_serialization(tmp_path
     assert before==(path.read_bytes(),sidecar_path(path).read_bytes())
     assert not list(tmp_path.glob('.*'))
     assert load_model(path).metadata.model_id==bundle.metadata.model_id
+
+
+def test_overwrite_rolls_back_sidecar_when_model_publish_fails(tmp_path,bundle):
+    path=tmp_path/'artifact.joblib'
+    save_model(bundle,path)
+    before=path.read_bytes(),sidecar_path(path).read_bytes()
+    real_replace=os.replace
+    def fail_model_publish(source,destination):
+        if Path(destination)==path:
+            raise OSError('model publish failed')
+        return real_replace(source,destination)
+    with patch('damage_gui.model.registry.os.replace',side_effect=fail_model_publish):
+        with pytest.raises(OSError,match='model publish failed'):
+            save_model(bundle,path)
+    assert before==(path.read_bytes(),sidecar_path(path).read_bytes())
+    assert not list(tmp_path.glob('.*'))
+
+
+def test_overwrite_with_legacy_model_removes_stale_sidecar(tmp_path,bundle):
+    path=tmp_path/'artifact.joblib'
+    save_model(bundle,path)
+    save_model(dataclasses.replace(bundle,metadata=None),path)
+    assert not sidecar_path(path).exists()
+    assert load_model(path).metadata is None
 
 
 def test_registration_activation_missing_and_trace(tmp_path,bundle):

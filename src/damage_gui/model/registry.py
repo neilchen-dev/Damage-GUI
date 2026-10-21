@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -29,6 +30,8 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
     if not overwrite and (path.exists() or sidecar.exists()):
         raise FileExistsError(f"Model artifact already exists: {path.name}")
     temporary, published = [], []
+    sidecar_backup = None
+    sidecar_changed = False
     try:
         fd, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         os.close(fd)
@@ -39,6 +42,12 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
         # Errno 9（POSIX 允许对只读 fd fsync，故仅在 Windows CI 暴露）。
         with model_tmp.open("rb+") as stream:
             os.fsync(stream.fileno())
+        if overwrite and sidecar.exists():
+            fd, name = tempfile.mkstemp(prefix=f".{sidecar.name}.backup.", dir=path.parent)
+            os.close(fd)
+            sidecar_backup = Path(name)
+            temporary.append(sidecar_backup)
+            shutil.copy2(sidecar, sidecar_backup)
         if metadata is not None:
             fd, name = tempfile.mkstemp(prefix=f".{sidecar.name}.", dir=path.parent)
             meta_tmp = Path(name)
@@ -49,9 +58,13 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
                 os.fsync(stream.fileno())
             if overwrite:
                 os.replace(meta_tmp, sidecar)
+                sidecar_changed = True
             else:
                 os.link(meta_tmp, sidecar)
                 published.append(sidecar)
+        elif overwrite and sidecar.exists():
+            sidecar.unlink()
+            sidecar_changed = True
         if overwrite:
             os.replace(model_tmp, path)
         else:
@@ -60,6 +73,11 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
     except Exception:
         for artifact in published:
             artifact.unlink(missing_ok=True)
+        if sidecar_changed:
+            if sidecar_backup is not None:
+                shutil.copy2(sidecar_backup, sidecar)
+            else:
+                sidecar.unlink(missing_ok=True)
         raise
     finally:
         for artifact in temporary:

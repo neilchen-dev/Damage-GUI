@@ -169,6 +169,18 @@ class ValidationWorkspace(QWidget):
         self.render()
 
     def set_bundle(self,bundle):
+        if self.bundle is not bundle:
+            self.result=None
+            self.config=None
+            if hasattr(self,'selected_sample'):
+                del self.selected_sample
+            self.sample_model.replace([])
+            self.comparison.clear()
+            self.sample_caption.clear()
+            self.histogram_figure.clear()
+            self.histogram.draw_idle()
+            self.summary.setPlainText(self.text('ready'))
+            self.status.setText(self.text('ready'))
         self.bundle=bundle
         model_id=bundle.metadata.model_id if bundle.metadata else 'legacy'
         self.model_label.setText(f'{bundle.level} · {getattr(bundle.model,"model_name",bundle.model_type)} · {model_id[:10]}…')

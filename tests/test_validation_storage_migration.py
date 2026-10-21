@@ -1,6 +1,7 @@
 from contextlib import closing
+from unittest.mock import patch
 
-from damage_gui.storage.db import SCHEMA_SQL, connect, ensure_schema
+from damage_gui.storage.db import SCHEMA_SQL, connect, ensure_schema, init_database
 from damage_gui.storage.repositories import JobRepository, PredictionResultRepository
 
 
@@ -21,3 +22,12 @@ def test_validation_kind_migration_preserves_references(tmp_path):
     assert JobRepository(path).get_job('old')['status']=='SUCCESS'
     assert len(PredictionResultRepository(path).list_results('old'))==1
     assert JobRepository(path).insert_job(kind='validation',details={'validation_mode':'random'})
+
+
+def test_current_schema_reads_skip_migration(tmp_path):
+    path=tmp_path/'current.sqlite'
+    assert init_database(path)
+    with patch('damage_gui.storage.db._migrate_jobs_kind_constraint',
+               side_effect=AssertionError('unexpected migration')):
+        assert JobRepository(path).list_jobs()==[]
+        assert JobRepository(path).count_jobs()==0
