@@ -124,6 +124,14 @@ class Config:
     ui_danger: str = "#B91C1C"
     ui_busy: str = "#B45309"
 
+    def scientific_mapping(self) -> dict[str, Any]:
+        """Persist model settings without desktop-only presentation colors."""
+        return {
+            item.name: getattr(self, item.name)
+            for item in fields(self)
+            if not item.name.startswith("ui_")
+        }
+
     @classmethod
     def from_mapping(cls, values: Mapping[str, Any] | None) -> Config:
         """从模型包等外部映射恢复配置，忽略未来或旧版本的未知字段。"""

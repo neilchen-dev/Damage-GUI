@@ -1,10 +1,10 @@
 """无头（headless）导入守卫测试：Web/无头运行时解耦的 Phase 0 验收。
 
-以子进程 + 元路径拦截器模拟"没有 Tkinter"的运行环境：
-- 拦截 tkinter 及 damage_gui.gui.main_window 的导入（一旦被导入即抛错）；
+以子进程 + 元路径拦截器模拟"没有桌面 UI"的运行环境：
+- 拦截 tkinter、PySide6 与 damage_gui.qt 的导入（一旦被导入即抛错）；
 - 验证 storage / logging_setup / visualization.plots / app 及
-  gui.resources 兼容 shim 均可在该环境下导入；
-- 验证 damage_gui.app 不在模块导入期拉起 Tk GUI；
+  runtime.paths 均可在该环境下导入；
+- 验证 damage_gui.app 不在模块导入期拉起 Qt GUI；
 - 验证 plots 导入不绑定 matplotlib 后端、不加载 TkAgg backend 模块。
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ _HEADLESS_PROBE = textwrap.dedent(
     import sys
     from importlib.abc import MetaPathFinder
 
-    BLOCKED = ("tkinter", "damage_gui.gui.main_window")
+    BLOCKED = ("tkinter", "PySide6", "damage_gui.qt")
 
 
     class _Blocker(MetaPathFinder):
@@ -60,14 +60,14 @@ _HEADLESS_PROBE = textwrap.dedent(
     import damage_gui.storage.db  # noqa: E402
     import damage_gui.logging_setup  # noqa: E402
     import damage_gui.visualization.plots  # noqa: E402
-    import damage_gui.gui.resources  # noqa: E402
+    import damage_gui.runtime.paths  # noqa: E402
     import damage_gui.app  # noqa: E402
     import damage_gui.webapp  # noqa: E402
 
     assert "tkinter" not in sys.modules, "tkinter 被无头导入链拉起"
     assert (
-        "damage_gui.gui.main_window" not in sys.modules
-    ), "damage_gui.app 在模块导入期拉起了 Tk GUI"
+        "damage_gui.qt.main_window" not in sys.modules
+    ), "damage_gui.app 在模块导入期拉起了 Qt GUI"
 
     # 关键符号可用性：兼容 re-export 不因延迟导入而丢失
     assert damage_gui.app.DamageModelService is not None
@@ -80,14 +80,14 @@ _HEADLESS_PROBE = textwrap.dedent(
 
 
 class HeadlessImportGuardTests(unittest.TestCase):
-    def test_infrastructure_modules_import_without_tk(self) -> None:
-        """storage / logging_setup / plots / app 可在无 Tk 环境导入。"""
+    def test_infrastructure_modules_import_without_desktop_ui(self) -> None:
+        """storage / logging_setup / plots / app 可在无桌面 UI 环境导入。"""
         result = _run_probe(_HEADLESS_PROBE)
         self.assertEqual(result.returncode, 0, msg=f"stderr: {result.stderr[-2000:]}")
         self.assertIn("HEADLESS_IMPORT_OK", result.stdout)
 
-    def test_app_import_alone_does_not_pull_tk_gui(self) -> None:
-        """仅导入 damage_gui.app 不得触发 Tk GUI 模块加载。"""
+    def test_app_import_alone_does_not_pull_qt_gui(self) -> None:
+        """仅导入 damage_gui.app 不得触发 Qt GUI 模块加载。"""
         probe = textwrap.dedent(
             """
             import sys
@@ -95,8 +95,8 @@ class HeadlessImportGuardTests(unittest.TestCase):
 
             class _Blocker(MetaPathFinder):
                 def find_spec(self, fullname, path=None, target=None):
-                    if fullname == "damage_gui.gui.main_window" or fullname.startswith(
-                        "damage_gui.gui.main_window."
+                    if fullname in ("PySide6", "damage_gui.qt") or fullname.startswith(
+                        ("PySide6.", "damage_gui.qt.")
                     ):
                         raise ImportError("blocked: " + fullname)
                     return None
@@ -106,7 +106,7 @@ class HeadlessImportGuardTests(unittest.TestCase):
             import damage_gui.app  # noqa: E402
 
             assert "tkinter" not in sys.modules
-            assert "damage_gui.gui.main_window" not in sys.modules
+            assert "damage_gui.qt.main_window" not in sys.modules
             print("APP_LAZY_OK")
             """
         )
@@ -122,7 +122,7 @@ class HeadlessImportGuardTests(unittest.TestCase):
             import damage_gui.webapp  # noqa: E402
 
             assert "tkinter" not in sys.modules
-            assert "damage_gui.gui.main_window" not in sys.modules
+            assert "damage_gui.qt.main_window" not in sys.modules
             assert "matplotlib" not in sys.modules
             print("WEBAPP_LAZY_OK")
             """

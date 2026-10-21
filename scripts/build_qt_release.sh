@@ -35,7 +35,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
     mkdir -p build
     ICONSET=build/damagelab-icon.iconset
     rm -rf "$ICONSET" && mkdir -p "$ICONSET"
-    SRC_PNG=src/damage_gui/gui/assets/damagelab-icon.png
+    SRC_PNG=src/damage_gui/qt/assets/damagelab-icon.png
     for s in 16 32 128 256 512; do
         sips -z "$s" "$s" "$SRC_PNG" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
     done

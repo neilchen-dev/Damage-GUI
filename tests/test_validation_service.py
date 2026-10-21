@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
 
@@ -36,3 +38,13 @@ def test_degenerate_layer_disabled_by_original_solver(tmp_path):
     service=make_service(tmp_path)
     with pytest.raises(ModelFitError):
         ValidationService.validate_configuration(service.data_manager.get_level_records('F'),service.config,'leave_v_out')
+
+
+def test_validation_skips_unused_deliverable_fit(validation_bundle):
+    bundle,path=validation_bundle
+    from damage_gui.model.bundle import build_model
+    with patch('damage_gui.model.bundle.build_model', wraps=build_model) as build:
+        result=ValidationService().run(bundle,str(path),bundle.resolved_config(),
+                                       'leave_h_out',held_out_value=3.)
+    assert len(result.samples)==9
+    assert build.call_count==1

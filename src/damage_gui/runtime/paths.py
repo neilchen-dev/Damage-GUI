@@ -1,7 +1,6 @@
 """运行时路径实现：源码 / PyInstaller 双模式解析。
 
-从 damage_gui.gui.resources 迁移而来；GUI 包内保留 shim 以兼容历史导入
-路径与打包 spec。app_base_dir() 是存储层与日志真正依赖的共享助手；
+app_base_dir() 是存储层与日志依赖的共享助手；
 resource_path() 供随包资源解析（GUI 图标等），base_dir 显式传入以便
 各调用方锚定自己的资源目录。
 """

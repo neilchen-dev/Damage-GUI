@@ -1,11 +1,7 @@
-"""Qt-facing i18n re-export.
-
-Rather than copy the whole dictionary we simply wrap the existing Tk
-translator so the two front-ends share exactly the same catalog.
-"""
+"""Qt-facing translations and presentation text."""
 from __future__ import annotations
 
-from damage_gui.gui.i18n import (
+from damage_gui.i18n import (
     DEFAULT_LANGUAGE,
     SUPPORTED_LANGUAGES,
     TRANSLATIONS,
@@ -21,7 +17,7 @@ __all__ = [
     "SUPPORTED_LANGUAGES",
 ]
 
-# Presentation-only copy; shared Tk catalog remains unchanged.
+# Presentation-only copy; shared catalog remains unchanged.
 QT_COPY = {
     "activity_type": ("类型", "Type"),
     "activity_status": ("状态", "Status"),

@@ -119,11 +119,12 @@ def init_database(db_path: str | Path) -> bool:
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """写入操作前确保表结构存在（CREATE IF NOT EXISTS，幂等）。"""
+    """Initialize or migrate once per database version, including legacy files."""
+    if conn.execute("PRAGMA user_version").fetchone()[0] >= 7:
+        return
     conn.executescript(SCHEMA_SQL)
     _migrate_jobs_kind_constraint(conn)
-    if conn.execute("PRAGMA user_version").fetchone()[0] < 7:
-        conn.execute("PRAGMA user_version=7")
+    conn.execute("PRAGMA user_version=7")
 
 
 def _migrate_jobs_kind_constraint(conn: sqlite3.Connection) -> None:

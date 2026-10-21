@@ -33,7 +33,7 @@ web = [
     "uvicorn>=0.30,<1",
 ]
 desktop-qt = [
-    "PySide6>=6.5,<7",
+    "PySide6_Addons>=6.5,<7",
 ]
 
 [project.scripts]
@@ -48,8 +48,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 damage_gui = [
     "qt/icons/*.svg",
-    "gui/assets/*.ico",
-    "gui/assets/*.png",
+    "qt/assets/*.ico",
+    "qt/assets/*.png",
     "webapp/static/*.html",
     "webapp/static/*.css",
     "webapp/static/*.js",

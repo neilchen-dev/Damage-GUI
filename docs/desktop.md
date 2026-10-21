@@ -1,8 +1,7 @@
 # DamageLab 桌面版使用指南（Qt）
 
-Qt 桌面版（`damage-gui-qt`）是 DamageLab 的主桌面产品：CAE 风格工作台，
-覆盖训练、预测、批量、验证、模型库与历史追溯全流程。旧 Tkinter 工作台
-（pip 入口 `damage-gui`）保留为 legacy，不再演进，建议迁移到 Qt 版。
+Qt 桌面版（`damage-gui` 或 `damage-gui-qt`）是 DamageLab 的桌面产品：CAE 风格工作台，
+覆盖训练、预测、瞄准优化、批量、验证、模型库与历史追溯。
 
 ## Getting Started
 
@@ -12,7 +11,7 @@ Qt 桌面版（`damage-gui-qt`）是 DamageLab 的主桌面产品：CAE 风格�
 python -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[desktop-qt]"
-damage-gui-qt
+damage-gui
 ```
 
 ### 从发布包运行
@@ -49,6 +48,13 @@ damage-gui-qt
 - **Export**：导出 PNG（300 DPI）
 
 结果显示峰值强度、毁伤面积比、OOD 可信度分级与耗时。
+
+### Aim（瞄准优化）
+
+先完成一次预测，再进入瞄准优化页。选择 CEP 或 REP/DEP 散布模式；REP/DEP
+可输入相关系数 ρ，或启用旋转角 θ 定义散布椭圆。设置可靠度 R 后运行，页面
+显示毁伤场与价值场双图、最佳瞄准点、相对增益和偏移距离。视口可导出 PNG。
+更换模型后旧优化结果会清空。
 
 ### Batch（批量预测）
 
@@ -88,7 +94,7 @@ JSON 汇总。
 |---|---|
 | `Cmd/Ctrl+O` | 打开模型 |
 | `Cmd/Ctrl+S` | 保存模型 |
-| `Cmd/Ctrl+R` | 运行当前页主操作（预测 / 批量 / 验证 / 训练） |
+| `Cmd/Ctrl+R` | 运行当前页主操作（预测 / 瞄准优化 / 批量 / 验证 / 训练） |
 | `Cmd/Ctrl+F` | 聚焦当前页搜索框（模型库 / 历史 / 批量 / 验证） |
 | `Cmd/Ctrl+E` | 导出当前视图（预测 PNG / 验证 JSON） |
 | `Cmd/Ctrl+L` | 展开 / 收起日志面板 |
@@ -129,7 +135,7 @@ scripts\build_qt_release.bat
 ```
 
 - spec：`scripts/damagelab-qt.spec`（Qt 入口、SVG 图标集、应用图标、
-  Matplotlib 资源；排除 Tkinter / Web 后端与未用 Qt 模块）
+  Matplotlib 资源；排除 Web 后端与未用 Qt 模块）
 - 产物：`release/DamageLab-<版本>-<平台>/`（macOS 含 `DamageLab.app`，
   由 PNG 经 `iconutil` 生成 .icns）
 - 签名：无证书，**未签名本地构建**（macOS ad-hoc）

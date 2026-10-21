@@ -54,4 +54,4 @@
 
 - [ ] CLI（damage-gui-cli info / predict / batch）正常
 - [ ] FastAPI Web 启动正常
-- [ ] legacy Tkinter 桌面（damage-gui）可启动（如保留）
+- [ ] `damage-gui` 入口启动 Qt 桌面

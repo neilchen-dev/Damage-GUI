@@ -12,8 +12,7 @@ Artifacts (onedir, windowed):
                                                 scripts/build_qt_release.sh)
 
 Notes:
-- entry point is the **Qt** app (damage_gui.qt.app), NOT the legacy
-  Tkinter desktop; legacy stays available via `pip install` entry points.
+- entry point is the Qt app (damage_gui.qt.app).
 - bundled data: Qt SVG icon set, app icons, matplotlib resources are
   collected by the built-in hook (fonts / colormaps survive freezing).
 - user data (SQLite / logs / reports) is written to the platform user
@@ -41,12 +40,12 @@ def _platform_tag() -> str:
 
 
 NAME = f"DamageLab-{__version__}-{_platform_tag()}"
-ICON_ASSETS = SRC / "damage_gui" / "gui" / "assets"
+ICON_ASSETS = SRC / "damage_gui" / "qt" / "assets"
 
 datas = [
     (str(SRC / "damage_gui" / "qt" / "icons" / "*.svg"), "damage_gui/qt/icons"),
-    (str(ICON_ASSETS / "damagelab-icon.png"), "damage_gui/gui/assets"),
-    (str(ICON_ASSETS / "damagelab-icon.ico"), "damage_gui/gui/assets"),
+    (str(ICON_ASSETS / "damagelab-icon.png"), "damage_gui/qt/assets"),
+    (str(ICON_ASSETS / "damagelab-icon.ico"), "damage_gui/qt/assets"),
 ]
 
 hiddenimports = [
@@ -54,13 +53,10 @@ hiddenimports = [
     "matplotlib.backends.backend_qtagg",
 ]
 
-# Legacy Tk desktop, web backend and unused Qt modules stay out of the
-# bundle.  damage_gui.gui.resources (icon shim) is still collected —
-# it does not import tkinter itself.
+# Web backend and unused Qt modules stay out of the bundle.
 excludes = [
     "tkinter",
     "_tkinter",
-    "damage_gui.gui.main_window",
     "damage_gui.desktop",
     "damage_gui.webapp",
     "fastapi",

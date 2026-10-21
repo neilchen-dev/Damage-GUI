@@ -60,6 +60,14 @@ class ModelBundle:
         return Config.from_mapping(getattr(self, "config", None))
 
 
+@dataclass
+class EvaluationResult:
+    """Reports from validation folds without constructing a deliverable model."""
+
+    accuracy_report: pd.DataFrame
+    condition_report: pd.DataFrame
+
+
 def build_model(
     model_type: str,
     config: Config,
@@ -109,7 +117,8 @@ class DamageModelService:
         cancel_check=None,
         held_out_value: float | None = None,
         evaluation_observer=None,
-    ) -> ModelBundle:
+        evaluation_only: bool = False,
+    ) -> ModelBundle | EvaluationResult:
         """训练并评估模型。
 
         验证模式：
@@ -119,6 +128,7 @@ class DamageModelService:
           的泛化能力，交付模型使用全部可用数据）。
 
         cancel_check：无参可调用对象，返回 True 时抛出 TrainingCancelled。
+        evaluation_only：只返回折外报告，不拟合或构造交付模型。
         """
         config = self.config
         validation_mode = validation_mode or config.validation_mode
@@ -153,7 +163,7 @@ class DamageModelService:
             return matrix_cache[record.path]
 
         total_units = sum(len(s.train) for s in splits) + sum(len(s.test) for s in splits)
-        if is_loo:
+        if is_loo and not evaluation_only:
             total_units += len(records)  # 最终全量重训练的读取
         done = 0
 
@@ -206,6 +216,10 @@ class DamageModelService:
                 deliverable_model = model
                 deliverable_train_records = list(split.train)
 
+        if evaluation_only:
+            accuracy_report, condition_report = self._evaluate_pairs(level, pairs)
+            return EvaluationResult(accuracy_report, condition_report)
+
         if is_loo:
             # 折外指标已聚合完毕；交付模型使用全部工况重新训练
             conditions = np.zeros((len(records), 3), dtype=np.float64)
@@ -236,7 +250,7 @@ class DamageModelService:
             level=level,
             data_dir=str(self.data_manager.data_dir),
             target_shape=config.target_shape,
-            config=config.__dict__.copy(),
+            config=config.scientific_mapping(),
             model=deliverable_model,
             train_conditions=[r.condition.as_dict() for r in deliverable_train_records],
             test_conditions=[r.condition.as_dict() for r in test_records],

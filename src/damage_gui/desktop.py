@@ -9,8 +9,8 @@ from __future__ import annotations
 
 
 def main() -> None:
-    """Launch the Tk workbench without importing ``damage_gui.app``."""
-    from damage_gui.gui.main_window import main as run_desktop
+    """Launch the Qt workbench without importing ``damage_gui.app``."""
+    from damage_gui.qt.app import main as run_desktop
 
     run_desktop()
 
