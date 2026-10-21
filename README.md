@@ -42,7 +42,7 @@
 ## 软件架构（Software Architecture）
 
 ```text
-Desktop GUI (PySide6/Qt) ─┐  训练 / 预测 / 批量 / 验证 / 模型库 / 历史
+Desktop GUI (PySide6/Qt) ─┐  训练 / 预测 / 瞄准优化 / 批量 / 验证 / 模型库 / 历史
 CLI (damage-gui-cli) ─────┤  info / predict / batch
 研究脚本 (scripts/) ──────┘
             ↓
@@ -94,7 +94,7 @@ Storage / Files               SQLite 追溯库（models / jobs / prediction_resu
 
 ## 产品界面与国际化
 
-桌面端（`damage-gui`，也可用 `damage-gui-qt`）为 CAE 风格四区工作台：应用栏（菜单 / 当前模型 / 语言）、工具栏图标导航（预测 · 训练 · 模型库 · 批量 · 历史 · 验证）、深色科学视口（Matplotlib 热力图 + 平移/缩放/探针工具栏）与右侧 Inspector 输入/结果面板，底部为可折叠的任务 / 结果 / 日志活动面板。右上角语言按钮可即时切换中英文；模型类型、验证方式等内部值保持稳定。
+桌面端（`damage-gui`，也可用 `damage-gui-qt`）为 CAE 风格四区工作台：应用栏（菜单 / 当前模型 / 语言）、工具栏图标导航（预测 · 瞄准优化 · 训练 · 模型库 · 批量 · 历史 · 验证）、深色科学视口（Matplotlib 热力图 + 平移/缩放/探针工具栏）与右侧 Inspector 输入/结果面板，底部为可折叠的任务 / 结果 / 日志活动面板。右上角语言按钮可即时切换中英文；模型类型、验证方式等内部值保持稳定。
 
 预测工作台（1440×900，主界面）：
 
@@ -214,9 +214,10 @@ damage-gui
 1. **加载模型**：预测页 → Open Model（`Cmd/Ctrl+O`）选择 `*.joblib` 模型，或进入训练页用本地数据目录训练新模型；
 2. **模型库**：训练完成后注册模型，在模型库中查看生命周期状态并激活；
 3. **预测**：右侧 Inspector 输入工况 `(h, v, deg)` → Run Prediction（`F5`），深色视口显示预测场 / 真值场 / 误差场，支持平移、缩放、探针取值与 PNG 导出；
-4. **验证**：验证页选择结构化验证方式（随机留出 / 整层留出 / 角落外推）评估模型；
-5. **批量**：批量页导入工况 CSV 批量预测，输出 CSV 报告；
-6. **历史**：历史页追溯全部任务（训练 / 预测 / 批量 / 验证），可回填输入参数。
+4. **瞄准优化**：预测成功后切换到瞄准优化页，选择 CEP 或 REP/DEP 散布参数，运行后查看最优点、价值场与相对增益；
+5. **验证**：验证页选择结构化验证方式（随机留出 / 整层留出 / 角落外推）评估模型；
+6. **批量**：批量页导入工况 CSV 批量预测，输出 CSV 报告；
+7. **历史**：历史页追溯全部任务（训练 / 预测 / 批量 / 验证），可回填输入参数。
 
 桌面版数据（SQLite 追溯库、日志、报告）写入平台用户数据目录（macOS `~/Library/Application Support/DamageLab`、Windows `%APPDATA%\DamageLab`、Linux `~/.local/share/DamageLab`），不写入安装目录。常用快捷键：`Cmd/Ctrl+O` 打开模型、`Cmd/Ctrl+R` 运行当前页、`Cmd/Ctrl+F` 搜索、`Cmd/Ctrl+E` 导出、`Cmd/Ctrl+L` 日志、`F5` 预测。
 
@@ -462,4 +463,4 @@ scripts\build_qt_release.bat
 - OOD 检测为最近邻距离 + SVD 全局凸包 + 局部邻域凸包三层几何判定；F/M/P 三级阈值与自动邻居数已用真实结构化验证标定。局部凸包仍属于启发式支撑检查，数据网格改变后应重新运行校准；LOF/k-NN 密度比可作为后续补充。
 - 训练矩阵读取与预处理结果缓存可进一步细化，支撑更大工况库。
 - Qt 桌面发布包为 **未签名本地构建**（无代码签名证书）：macOS 首次启动需右键 → 打开；Windows SmartScreen 可能提示"更多信息 → 仍要运行"。平台验收状态：macOS 已实机验证；Windows 构建经 CI 验证（本阶段未做实机 GUI 人工验收）；Linux **NOT TESTED**（未实机验证，Wayland 下建议 `QT_QPA_PLATFORM=xcb`）。
-- 桌面端使用 Qt；`damage-gui` 和 `damage-gui-qt` 均启动同一工作台。瞄准优化目前仍可通过 Web 使用，Qt 页尚未实现。
+- 桌面端使用 Qt；`damage-gui` 和 `damage-gui-qt` 均启动同一工作台。

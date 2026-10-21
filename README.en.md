@@ -84,9 +84,10 @@ Basic workflow after launch:
 1. **Load a model**: on the prediction page, Open Model (`Cmd/Ctrl+O`) to pick a `*.joblib` bundle, or train a new one from a local data directory on the training page.
 2. **Model registry**: register the trained model, review its lifecycle status, and activate it.
 3. **Predict**: enter `(h, v, deg)` in the inspector → Run Prediction (`F5`); the dark viewport shows the predicted / truth / error fields with pan, zoom, probe, and PNG export.
-4. **Validate**: choose a structured validation mode (random / leave-layer-out / corner holdout).
-5. **Batch**: import a conditions CSV and export the batch report.
-6. **History**: trace every job (training / prediction / batch / validation) with input reconstruction.
+4. **Optimize aim**: after prediction, open Aim, choose CEP or REP/DEP dispersion, and inspect the best point, value field, and gain.
+5. **Validate**: choose a structured validation mode (random / leave-layer-out / corner holdout).
+6. **Batch**: import a conditions CSV and export the batch report.
+7. **History**: trace every job (training / prediction / batch / validation) with input reconstruction.
 
 Desktop data (SQLite trace DB, logs, reports) is written to the platform user-data directory (macOS `~/Library/Application Support/DamageLab`, Windows `%APPDATA%\DamageLab`, Linux `~/.local/share/DamageLab`), never the install directory. Common shortcuts: `Cmd/Ctrl+O` open model, `Cmd/Ctrl+R` run current page, `Cmd/Ctrl+F` search, `Cmd/Ctrl+E` export, `Cmd/Ctrl+L` logs, `F5` predict. See [`docs/desktop.md`](docs/desktop.md) for the full guide.
 
@@ -212,7 +213,7 @@ Artifacts land in `release/DamageLab-<version>-<platform>/` (macOS: `DamageLab.a
 - Aim-point optimization defines the dispersion ellipse in the target normal plane (A1/A2 assumption); the ground-plane → normal-plane projection for oblique impact has not been modeled yet.
 - OOD detection is a three-layer geometric check (nearest-neighbor distance + SVD global hull + local neighborhood hull) with F/M/P thresholds calibrated on real structured validation; the local hull remains heuristic and should be recalibrated when the data grid changes.
 - Qt desktop packages are **unsigned local builds** (no code-signing certificate): on macOS the first launch needs right-click → Open; Windows SmartScreen may show "More info → Run anyway". Platform acceptance status: macOS verified on real hardware; Windows build verified in CI (no manual on-hardware GUI acceptance this phase); Linux **NOT TESTED** (on Wayland prefer `QT_QPA_PLATFORM=xcb`).
-- Both `damage-gui` and `damage-gui-qt` launch Qt. Aim optimization remains available in the Web app; its Qt page is not implemented yet.
+- Both `damage-gui` and `damage-gui-qt` launch the Qt workbench.
 
 ## License
 
