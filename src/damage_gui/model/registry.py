@@ -35,7 +35,9 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
         raise FileExistsError(f"Model artifact already exists: {path.name}")
     temporary, published = [], []
     sidecar_backup = None
+    signature_backup = None
     sidecar_changed = False
+    signature_changed = False
     try:
         fd, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         os.close(fd)
@@ -59,6 +61,12 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
             sidecar_backup = Path(name)
             temporary.append(sidecar_backup)
             shutil.copy2(sidecar, sidecar_backup)
+        if overwrite and signature.exists():
+            fd, name = tempfile.mkstemp(prefix=f".{signature.name}.backup.", dir=path.parent)
+            os.close(fd)
+            signature_backup = Path(name)
+            temporary.append(signature_backup)
+            shutil.copy2(signature, signature_backup)
         if metadata is not None:
             fd, name = tempfile.mkstemp(prefix=f".{sidecar.name}.", dir=path.parent)
             meta_tmp = Path(name)
@@ -78,6 +86,7 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
             sidecar_changed = True
         if overwrite:
             os.replace(signature_tmp, signature)
+            signature_changed = True
         else:
             os.link(signature_tmp, signature)
             published.append(signature)
@@ -94,6 +103,11 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
                 shutil.copy2(sidecar_backup, sidecar)
             else:
                 sidecar.unlink(missing_ok=True)
+        if signature_changed:
+            if signature_backup is not None:
+                shutil.copy2(signature_backup, signature)
+            else:
+                signature.unlink(missing_ok=True)
         raise
     finally:
         for artifact in temporary:

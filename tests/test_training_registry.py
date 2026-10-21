@@ -9,6 +9,7 @@ import pytest
 
 from damage_gui.model.metadata import sidecar_path
 from damage_gui.model.registry import ModelLoadError, load_model, save_model
+from damage_gui.model.signing import signature_path
 from damage_gui.services.dataset_service import inspect_dataset
 from damage_gui.services.model_registry_service import ModelRegistryService
 from damage_gui.services.training_service import TrainingService
@@ -60,7 +61,7 @@ def test_atomic_save_preserves_existing_and_cleans_failed_serialization(tmp_path
 def test_overwrite_rolls_back_sidecar_when_model_publish_fails(tmp_path,bundle):
     path=tmp_path/'artifact.joblib'
     save_model(bundle,path)
-    before=path.read_bytes(),sidecar_path(path).read_bytes()
+    before=path.read_bytes(),sidecar_path(path).read_bytes(),signature_path(path).read_bytes()
     real_replace=os.replace
     def fail_model_publish(source,destination):
         if Path(destination)==path:
@@ -68,8 +69,9 @@ def test_overwrite_rolls_back_sidecar_when_model_publish_fails(tmp_path,bundle):
         return real_replace(source,destination)
     with patch('damage_gui.model.registry.os.replace',side_effect=fail_model_publish):
         with pytest.raises(OSError,match='model publish failed'):
-            save_model(bundle,path)
-    assert before==(path.read_bytes(),sidecar_path(path).read_bytes())
+            save_model(dataclasses.replace(bundle,metadata=None),path)
+    assert before==(path.read_bytes(),sidecar_path(path).read_bytes(),signature_path(path).read_bytes())
+    assert load_model(path).metadata.model_id==bundle.metadata.model_id
     assert not list(tmp_path.glob('.*'))
 
 
