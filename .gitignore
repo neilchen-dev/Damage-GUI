@@ -91,3 +91,6 @@ outputs/
 
 # Python packaging metadata
 *.egg-info/
+
+# Local model authentication keys
+model-signing.key

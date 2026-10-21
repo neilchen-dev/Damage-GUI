@@ -1,6 +1,7 @@
 """模型注册表：joblib 模型包 + JSON 元数据 sidecar 的保存/加载与校验。"""
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import joblib
 from damage_gui.errors import ModelLoadError
 from damage_gui.model.bundle import ModelBundle
 from damage_gui.model.metadata import ModelMetadata, sidecar_path
+from damage_gui.model.signing import digest, signature_path, verify_model
 
 logger = logging.getLogger("damage_gui.registry")
 
@@ -19,14 +21,16 @@ logger = logging.getLogger("damage_gui.registry")
 def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True) -> Path:
     """Serialize fully before publishing; registry callers reject existing files.
 
-    Each file is atomic, but the pair is not a filesystem transaction. Metadata is
-    published first. Default replacement preserves historical Save As behavior;
+    Each file is atomic, but the three files are not a filesystem transaction.
+    Metadata and signature are published before the model. Default replacement
+    preserves historical Save As behavior;
     registration uses atomic no-clobber hard links on the same filesystem.
     """
     path = Path(path)
     metadata = getattr(bundle, "metadata", None)
     sidecar = sidecar_path(path)
-    if not overwrite and (path.exists() or sidecar.exists()):
+    signature = signature_path(path)
+    if not overwrite and (path.exists() or sidecar.exists() or signature.exists()):
         raise FileExistsError(f"Model artifact already exists: {path.name}")
     temporary, published = [], []
     try:
@@ -38,6 +42,13 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
         # Windows 的 FlushFileBuffers 要求句柄有写权限，只读 fd 会报
         # Errno 9（POSIX 允许对只读 fd fsync，故仅在 Windows CI 暴露）。
         with model_tmp.open("rb+") as stream:
+            os.fsync(stream.fileno())
+        fd, name = tempfile.mkstemp(prefix=f".{signature.name}.", dir=path.parent)
+        signature_tmp = Path(name)
+        temporary.append(signature_tmp)
+        with os.fdopen(fd, "w", encoding="ascii") as stream:
+            stream.write(digest(model_tmp.read_bytes(), create_key=True))
+            stream.flush()
             os.fsync(stream.fileno())
         if metadata is not None:
             fd, name = tempfile.mkstemp(prefix=f".{sidecar.name}.", dir=path.parent)
@@ -52,6 +63,11 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
             else:
                 os.link(meta_tmp, sidecar)
                 published.append(sidecar)
+        if overwrite:
+            os.replace(signature_tmp, signature)
+        else:
+            os.link(signature_tmp, signature)
+            published.append(signature)
         if overwrite:
             os.replace(model_tmp, path)
         else:
@@ -106,7 +122,12 @@ def load_model(path: str | Path) -> ModelBundle:
     if not model_path.is_file():
         raise ModelLoadError(f"模型文件不存在: {model_path.name}")
     try:
-        bundle = joblib.load(model_path)
+        content = model_path.read_bytes()
+        verify_model(model_path, content)
+        # Load exactly the bytes verified above, eliminating replacement races.
+        bundle = joblib.load(io.BytesIO(content))
+    except ModelLoadError:
+        raise
     except Exception as exc:  # noqa: BLE001 —— 反序列化失败统一转为可读错误
         raise ModelLoadError(
             f"模型文件损坏或与当前软件版本不兼容: {model_path.name}"

@@ -486,3 +486,9 @@ scripts\build_qt_release.bat
 - 训练矩阵读取与预处理结果缓存可进一步细化，支撑更大工况库。
 - Qt 桌面发布包为 **未签名本地构建**（无代码签名证书）：macOS 首次启动需右键 → 打开；Windows SmartScreen 可能提示"更多信息 → 仍要运行"。平台验收状态：macOS 已实机验证；Windows 构建经 CI 验证（本阶段未做实机 GUI 人工验收）；Linux **NOT TESTED**（未实机验证，Wayland 下建议 `QT_QPA_PLATFORM=xcb`）。
 - Tkinter 旧版工作台（`damage-gui`）保留但不再演进；其 `gui/main_window.py` 布局代码维持现状，新功能仅在 Qt 版（`src/damage_gui/qt/`）实现。
+
+### 安全部署与旧模型迁移
+
+Web 服务现在需要配置至少 32 字符的 `DAMAGE_GUI_API_TOKEN`，浏览器首次访问时
+输入令牌登录。新保存的模型自动生成 `.joblib.sig`，未签名的旧模型必须由管理员
+独立核验来源后签名。部署、密钥备份和迁移步骤见 [部署说明](docs/deployment.md#security-configuration-and-model-migration)。
