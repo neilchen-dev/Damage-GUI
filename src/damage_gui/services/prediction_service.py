@@ -1,4 +1,4 @@
-"""Prediction use-case orchestration independent of Tkinter."""
+"""Prediction use-case orchestration independent of the desktop UI."""
 from __future__ import annotations
 
 import time

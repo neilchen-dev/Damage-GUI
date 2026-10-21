@@ -1,7 +1,7 @@
 """Application services shared by the desktop GUI and command-line tools.
 
 The service layer coordinates existing data, model, evaluation, and storage
-components.  It deliberately contains no Tkinter or other presentation code.
+components.  It deliberately contains no presentation code.
 """
 
 __all__ = [

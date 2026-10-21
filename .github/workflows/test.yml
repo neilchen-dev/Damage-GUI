@@ -103,7 +103,7 @@ jobs:
 
   build:
     # Phase 2.5: the shipped desktop product is the Qt app (damage-gui-qt),
-    # no longer the legacy Tkinter workbench.
+    # the default damage-gui entry point launches the same Qt workbench.
     name: Windows PyInstaller build (Qt desktop)
     needs: [lint, test, qt-smoke]
     runs-on: windows-latest

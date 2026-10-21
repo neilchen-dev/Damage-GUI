@@ -7,7 +7,7 @@
 - evaluation        数值与空间场评价指标
 - optimization      瞄准点优化（CEP / REP-DEP 散布模型）
 - visualization     Matplotlib 热力图与误差场渲染
-- gui               Tkinter 主窗口与小部件
+- qt                PySide6 桌面工作台
 - app               应用入口（瘦启动器 + 向后兼容 re-export）
 """
 

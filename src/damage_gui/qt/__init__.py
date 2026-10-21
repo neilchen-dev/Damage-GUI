@@ -2,7 +2,7 @@
 
 This package deliberately reuses :mod:`damage_gui.services`,
 :mod:`damage_gui.model`, :mod:`damage_gui.visualization` and the existing
-:class:`damage_gui.gui.i18n.Translator`.  No business logic lives here.
+:class:`damage_gui.i18n.Translator`.  No business logic lives here.
 """
 from __future__ import annotations
 

@@ -1,8 +1,7 @@
 # DamageLab 桌面版使用指南（Qt）
 
-Qt 桌面版（`damage-gui-qt`）是 DamageLab 的主桌面产品：CAE 风格工作台，
-覆盖训练、预测、批量、验证、模型库与历史追溯全流程。旧 Tkinter 工作台
-（pip 入口 `damage-gui`）保留为 legacy，不再演进，建议迁移到 Qt 版。
+Qt 桌面版（`damage-gui` 或 `damage-gui-qt`）是 DamageLab 的桌面产品：CAE 风格工作台，
+覆盖训练、预测、批量、验证、模型库与历史追溯。瞄准优化目前由 Web 端提供。
 
 ## Getting Started
 
@@ -12,7 +11,7 @@ Qt 桌面版（`damage-gui-qt`）是 DamageLab 的主桌面产品：CAE 风格�
 python -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[desktop-qt]"
-damage-gui-qt
+damage-gui
 ```
 
 ### 从发布包运行
@@ -129,7 +128,7 @@ scripts\build_qt_release.bat
 ```
 
 - spec：`scripts/damagelab-qt.spec`（Qt 入口、SVG 图标集、应用图标、
-  Matplotlib 资源；排除 Tkinter / Web 后端与未用 Qt 模块）
+  Matplotlib 资源；排除 Web 后端与未用 Qt 模块）
 - 产物：`release/DamageLab-<版本>-<平台>/`（macOS 含 `DamageLab.app`，
   由 PNG 经 `iconutil` 生成 .icns）
 - 签名：无证书，**未签名本地构建**（macOS ad-hoc）

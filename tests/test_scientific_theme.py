@@ -1,6 +1,5 @@
 """Opt-in viewport colors must not alter numerical fields or legacy rendering."""
 import gc
-import importlib.util
 import os
 import subprocess
 import sys
@@ -142,11 +141,3 @@ print("OK")
                             env={**os.environ, "MPLBACKEND": "Agg"}, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "OK" in result.stdout
-
-
-def test_legacy_tk_import_without_a_window():
-    if importlib.util.find_spec("tkinter") is None or importlib.util.find_spec("_tkinter") is None:
-        pytest.skip("Tkinter unavailable in this Python build")
-    result = subprocess.run([sys.executable, "-c", "import damage_gui.gui.main_window"],
-                            capture_output=True, text=True, timeout=60)
-    assert result.returncode == 0, result.stdout + result.stderr

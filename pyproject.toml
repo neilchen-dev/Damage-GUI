@@ -48,8 +48,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 damage_gui = [
     "qt/icons/*.svg",
-    "gui/assets/*.ico",
-    "gui/assets/*.png",
+    "qt/assets/*.ico",
+    "qt/assets/*.png",
     "webapp/static/*.html",
     "webapp/static/*.css",
     "webapp/static/*.js",

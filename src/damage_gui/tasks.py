@@ -1,7 +1,7 @@
 """后台任务状态机与任务管理器。
 
 GUI 只与 TaskManager 交互（提交 / 取消 / 轮询事件），不直接持有线程
-对象；Tkinter UI 更新仍由 GUI 在主线程完成。取消为协作式：worker
+对象；Qt UI 更新仍由 GUI 在主线程完成。取消为协作式：worker
 通过 cancel_check 感知后在安全点抛出 OperationCancelled 子类。
 """
 from __future__ import annotations
