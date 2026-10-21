@@ -18,7 +18,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from damage_gui.config import CONFIG
+from damage_gui.config import CONFIG, Config
 from damage_gui.data.loader import Condition, DamageDataManager
 from damage_gui.model.bundle import DamageModelService
 
@@ -81,6 +81,11 @@ class EndToEndSyntheticTests(unittest.TestCase):
         self.assertGreater(bundle.train_time_seconds, 0.0)
         self.assertEqual(bundle.resolved_config(), service.config)
         self.assertEqual(bundle.model.config, service.config)
+        self.assertFalse(any(key.startswith("ui_") for key in bundle.config))
+        self.assertEqual(
+            Config.from_mapping({**bundle.config, "ui_bg": "#123456"}).ui_bg,
+            "#123456",
+        )
 
         # 训练/测试划分
         self.assertEqual(

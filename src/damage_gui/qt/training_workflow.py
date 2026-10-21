@@ -1,5 +1,4 @@
 """Training lifecycle; completed bundles stay drafts until explicit registration."""
-import dataclasses
 import time
 import uuid
 from datetime import datetime, timezone
@@ -36,7 +35,7 @@ class TrainingWorkflow(QObject):
                         detail=f'{level} · {config.model_type.upper().replace("_", "-")}',
                         model_id=None, progress='—', elapsed='—')
         payload = dict(dataset=str(directory), level=level, model_type=config.model_type,
-                       config=dataclasses.asdict(config), validation_mode=config.validation_mode,
+                       config=config.scientific_mapping(), validation_mode=config.validation_mode,
                        registration='unregistered')
         self.state = dict(payload=payload, result=None, persisted=False)
         state, db = self.state, self.workflow.db_path

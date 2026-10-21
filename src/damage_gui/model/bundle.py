@@ -250,7 +250,7 @@ class DamageModelService:
             level=level,
             data_dir=str(self.data_manager.data_dir),
             target_shape=config.target_shape,
-            config=config.__dict__.copy(),
+            config=config.scientific_mapping(),
             model=deliverable_model,
             train_conditions=[r.condition.as_dict() for r in deliverable_train_records],
             test_conditions=[r.condition.as_dict() for r in test_records],
