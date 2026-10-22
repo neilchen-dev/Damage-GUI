@@ -64,7 +64,7 @@ def _app_icon():
     """应用图标：随包资源，源码 / frozen 双模式。"""
     from PySide6.QtGui import QIcon
 
-    from damage_gui.gui.resources import resolve_icon_paths
+    from damage_gui.runtime.icons import resolve_icon_paths
 
     _, png = resolve_icon_paths()
     if png is not None and png.is_file():

@@ -209,7 +209,21 @@
       return `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
     },
 
-    async request(path, options = {}) {
+    async login() {
+      if (!this.loginPending) {
+        this.loginPending = (async () => {
+          const token = window.prompt(state.language === "zh" ? "请输入访问令牌" : "Enter access token");
+          if (!token) throw new ApiError("Authentication required", 401);
+          const response = await fetch(this.resolve("/api/session"), {
+            method: "POST", headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok) throw new ApiError("Invalid access token", response.status);
+        })();
+      }
+      try { await this.loginPending; } finally { this.loginPending = null; }
+    },
+
+    async request(path, options = {}, retried = false) {
       const headers = new Headers(options.headers || {});
       if (options.body !== undefined && !headers.has("content-type")) {
         headers.set("content-type", "application/json");
@@ -221,6 +235,10 @@
         throw new ApiError(t("status.api_unavailable"));
       }
 
+      if (response.status === 401 && !retried) {
+        await this.login();
+        return this.request(path, options, true);
+      }
       const text = await response.text();
       let body = null;
       if (text) {

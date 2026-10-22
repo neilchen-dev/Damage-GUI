@@ -10,10 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import pandas as pd
-
+from damage_gui.data.conditions import validate_condition
+from damage_gui.data.table import notna, read_csv
 from damage_gui.errors import DataValidationError
-from damage_gui.services.conditions import validate_condition
 
 REQUIRED_INPUT_COLUMNS = ("h", "v", "deg")
 OPTIONAL_INPUT_COLUMNS = ("job_id", "level")
@@ -71,7 +70,7 @@ def parse_batch_csv(
         raise DataValidationError(f"批量输入文件不存在: {csv_path.name}")
     try:
         # dtype=str 保留 job_id 前导零等原始文本；数值列随后自行 float() 转换
-        frame = pd.read_csv(csv_path, dtype=str)
+        frame = read_csv(csv_path, dtype=str)
     except Exception as exc:  # noqa: BLE001 —— pandas 解析错误统一转译
         raise DataValidationError(
             f"批量输入 CSV 无法解析: {csv_path.name}（{exc}）"
@@ -92,13 +91,13 @@ def parse_batch_csv(
         line_no = int(index) + 2  # +1 表头、+1 转 1 基行号
         raw_job_id = record.get("job_id")
         job_id = (
-            str(raw_job_id).strip() if pd.notna(raw_job_id) and str(raw_job_id).strip()
+            str(raw_job_id).strip() if notna(raw_job_id) and str(raw_job_id).strip()
             else f"{index + 1:04d}"
         )
         try:
             level = str(
                 record["level"] if "level" in frame.columns
-                and pd.notna(record.get("level"))
+                and notna(record.get("level"))
                 and str(record.get("level")).strip()
                 else default_level
             ).strip().upper()

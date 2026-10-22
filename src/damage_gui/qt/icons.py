@@ -1,14 +1,12 @@
 """Small bundled outline icon set, tinted from the application palette."""
-from pathlib import Path
-
 from PySide6.QtCore import QByteArray, QSize, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QToolButton
 
 from damage_gui.qt import theme
+from damage_gui.qt.theme import ICON_DIR
 
-ICON_DIR = Path(__file__).with_name("icons")
 
 def icon(name, color, size=20):
     svg = (ICON_DIR / f"{name}.svg").read_text().replace("#667284", color)

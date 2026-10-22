@@ -92,9 +92,9 @@ class PredictionResponse(StrictModel):
 class AimRequest(StrictModel):
     run_id: str = Field(pattern=_ID_PATTERN)
     spread_mode: Literal["CEP", "REP_DEP"] = "CEP"
-    cep: float | None = None
-    rep: float | None = None
-    dep: float | None = None
+    cep: float | None = Field(default=None, ge=0.0, le=1_000_000.0)
+    rep: float | None = Field(default=None, ge=0.0, le=1_000_000.0)
+    dep: float | None = Field(default=None, ge=0.0, le=1_000_000.0)
     rho: float = 0.0
     theta_deg: float | None = None
     reliability: float = Field(default=1.0, gt=0.0, le=1.0)

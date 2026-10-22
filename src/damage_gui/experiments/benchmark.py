@@ -23,9 +23,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pandas as pd
 
 from damage_gui.data.loader import Condition
+from damage_gui.data.table import Table
 from damage_gui.model.bundle import DamageModelService, ModelBundle
 from damage_gui.model.registry import load_model, save_model
 
@@ -181,7 +181,7 @@ def save_benchmark_report(
     """写出 CSV（全量）+ JSON（机器可读）+ Markdown（摘要表）。"""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    frame = pd.DataFrame(rows)
+    frame = Table(rows)
 
     csv_path = out / f"{name}.csv"
     frame.to_csv(csv_path, index=False, encoding="utf-8-sig")

@@ -23,8 +23,8 @@ def predict(payload: PredictionRequest, request: Request) -> PredictionResponse:
     context = _context(request)
     model_id, bundle, descriptor = context.model_manager.get_bundle(payload.model_id)
 
+    from damage_gui.data.conditions import validate_condition
     from damage_gui.data.loader import DamageDataManager
-    from damage_gui.services.conditions import validate_condition
     from damage_gui.services.prediction_service import PredictionService
 
     condition = validate_condition(h=payload.h, v=payload.v, deg=payload.deg)

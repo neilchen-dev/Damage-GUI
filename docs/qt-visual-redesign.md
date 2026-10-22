@@ -88,7 +88,7 @@ Qt 集成测试在独立 offscreen 子进程运行：合成数据训练真实模
 截图可重现：
 
 ```sh
-QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_qt_loaded_states.py
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/archive/capture_qt_loaded_states.py
 ```
 
 `outputs/qt_phase18/` 包含规定四张截图、No Model / Model Loaded、中文与真值对照截图；`evidence.json` 记录实际工况、模型 ID、真实 OOD level / distance、指标与主图像素宽度。LOW 使用 h=2 / v=150 / deg=20（distance=0.5）；HIGH 使用训练工况 h=3 / v=100 / deg=10（distance=0）。截图来自 `tests/synthetic_data.py` 训练的 RBF 与保留原 detector 的 inference-only 模型包，不伪造 UI 指标或信心状态。该 fixture 的数值预测耗时可为 0ms（服务原有整数计时），UI 未人为放大。

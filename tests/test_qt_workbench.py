@@ -275,7 +275,7 @@ with tempfile.TemporaryDirectory() as model_dir:
         window._navigate(key)
         app.processEvents()
         assert window.pages.currentWidget() is page
-        expected = {"prediction": 0, "batch": 2, "history": 3, "validation": 4, "training": 5, "models": 6}.get(key, 1)
+        expected = {"prediction": 0, "batch": 2, "history": 3, "validation": 4, "training": 5, "models": 6, "aim": 7}.get(key, 1)
         assert window.inspector.currentIndex() == expected
     window._navigate("prediction")
     assert window.inspector.currentWidget() is panel

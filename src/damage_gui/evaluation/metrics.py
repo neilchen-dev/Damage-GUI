@@ -9,16 +9,54 @@ from __future__ import annotations
 import math
 
 import numpy as np
-import pandas as pd
 from scipy.ndimage import center_of_mass as ndi_center_of_mass
-from sklearn.metrics import (
-    max_error,
-    mean_absolute_error,
-    mean_squared_error,
-    r2_score,
-)
 
 from damage_gui.config import CONFIG, Config
+from damage_gui.data.table import Table, isna
+
+
+def _mse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """sklearn.metrics.mean_squared_error 的 1-D 等价实现（uniform_average）。"""
+    diff = np.asarray(y_true, dtype=np.float64).ravel() - np.asarray(
+        y_pred, dtype=np.float64
+    ).ravel()
+    return float(np.mean(diff * diff)) if diff.size else float("nan")
+
+
+def _mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """sklearn.metrics.mean_absolute_error 的 1-D 等价实现。"""
+    diff = np.abs(
+        np.asarray(y_true, dtype=np.float64).ravel()
+        - np.asarray(y_pred, dtype=np.float64).ravel()
+    )
+    return float(np.mean(diff)) if diff.size else float("nan")
+
+
+def _max_err(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """sklearn.metrics.max_error 的等价实现。"""
+    diff = np.abs(
+        np.asarray(y_true, dtype=np.float64).ravel()
+        - np.asarray(y_pred, dtype=np.float64).ravel()
+    )
+    return float(np.max(diff)) if diff.size else float("nan")
+
+
+def _r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """sklearn.metrics.r2_score 的 1-D 等价实现。
+
+    处理常数 y_true 的边界：分子==0 → 1.0；分母==0 且分子!=0 → 0.0。
+    """
+    yt = np.asarray(y_true, dtype=np.float64).ravel()
+    yp = np.asarray(y_pred, dtype=np.float64).ravel()
+    if yt.size == 0:
+        return float("nan")
+    ss_res = float(np.sum((yt - yp) ** 2))
+    if ss_res == 0.0:
+        return 1.0
+    ss_tot = float(np.sum((yt - yt.mean()) ** 2))
+    if ss_tot == 0.0:
+        return 0.0
+    return 1.0 - ss_res / ss_tot
 
 # 空间场指标列名（统一出现在指标报告中，非空间行置 NaN）
 SPATIAL_KEYS = (
@@ -54,7 +92,7 @@ def safe_r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
         return float("nan")
     if np.allclose(y_true, y_true[0]):
         return float("nan")
-    return float(r2_score(y_true, y_pred))
+    return _r2(y_true, y_pred)
 
 
 def metric_row(
@@ -82,9 +120,9 @@ def metric_row(
         row.update({key: np.nan for key in SPATIAL_KEYS})
         return row
 
-    mse_value = float(mean_squared_error(y_true, y_pred))
+    mse_value = float(_mse(y_true, y_pred))
     rmse_value = float(math.sqrt(mse_value))
-    mae_value = float(mean_absolute_error(y_true, y_pred))
+    mae_value = float(_mae(y_true, y_pred))
     true_ratio = float(np.mean(y_true > area_threshold))
     pred_ratio = float(np.mean(y_pred > area_threshold))
 
@@ -116,7 +154,7 @@ def metric_row(
         "RMSE": rmse_value,
         "MAE": mae_value,
         "R2": safe_r2(y_true, y_pred),
-        "MaxError": float(max_error(y_true, y_pred)),
+        "MaxError": float(_max_err(y_true, y_pred)),
         "TrueDamageAreaRatio": true_ratio,
         "PredDamageAreaRatio": pred_ratio,
         "AreaRatioGap": float(pred_ratio - true_ratio),
@@ -209,7 +247,7 @@ def spatial_metrics(
 # ===================== 摘要格式化 =====================
 
 def extract_core_metrics(
-    accuracy_report: pd.DataFrame,
+    accuracy_report: Table,
     config: Config | None = None,
     field: str = "smoothed",
 ) -> tuple[float | None, float | None]:
@@ -221,7 +259,7 @@ def extract_core_metrics(
     focus = accuracy_report[accuracy_report["scope"] == focus_scope]
     if "field" in accuracy_report.columns:
         focus = focus[focus["field"] == field]
-    if focus.empty or pd.isna(focus.iloc[0].get("MeanRelativeError", np.nan)):
+    if focus.empty or isna(focus.iloc[0].get("MeanRelativeError", np.nan)):
         return None, None
     return (
         float(focus.iloc[0]["MeanRelativeError"]),
@@ -230,7 +268,7 @@ def extract_core_metrics(
 
 
 def format_core_metrics(
-    accuracy_report: pd.DataFrame,
+    accuracy_report: Table,
     config: Config | None = None,
 ) -> str:
     """格式化评估摘要：核心指标为平均相对误差与 P95 混合误差。
@@ -264,7 +302,7 @@ def format_core_metrics(
         row = focus.iloc[0]
         mean_re = row.get("MeanRelativeError", np.nan)
         p95_hybrid = row.get("P95HybridError", np.nan)
-        if pd.isna(mean_re):
+        if isna(mean_re):
             continue
         prefix = "" if field == "smoothed" else "Raw "
         mean_flag = "✔达标" if mean_re < target else "✘未达标"
@@ -282,7 +320,7 @@ def format_core_metrics(
 
     if "field" in accuracy_report.columns:
         spatial = accuracy_report[accuracy_report["scope"] == "spatial"]
-        if not spatial.empty and not pd.isna(spatial.iloc[0].get("IoU", np.nan)):
+        if not spatial.empty and not isna(spatial.iloc[0].get("IoU", np.nan)):
             row = spatial.iloc[0]
             lines.append(
                 "空间指标 (Raw 场): "

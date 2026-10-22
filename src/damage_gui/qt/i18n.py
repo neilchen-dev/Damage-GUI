@@ -5,7 +5,8 @@ translator so the two front-ends share exactly the same catalog.
 """
 from __future__ import annotations
 
-from damage_gui.gui.i18n import (
+# 中立层（自 damage_gui.gui.i18n 迁出）—— Qt 不依赖 Tk 实现层
+from damage_gui.i18n import (
     DEFAULT_LANGUAGE,
     SUPPORTED_LANGUAGES,
     TRANSLATIONS,

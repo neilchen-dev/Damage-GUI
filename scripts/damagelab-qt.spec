@@ -41,12 +41,12 @@ def _platform_tag() -> str:
 
 
 NAME = f"DamageLab-{__version__}-{_platform_tag()}"
-ICON_ASSETS = SRC / "damage_gui" / "gui" / "assets"
+ICON_ASSETS = SRC / "damage_gui" / "runtime" / "assets"
 
 datas = [
     (str(SRC / "damage_gui" / "qt" / "icons" / "*.svg"), "damage_gui/qt/icons"),
-    (str(ICON_ASSETS / "damagelab-icon.png"), "damage_gui/gui/assets"),
-    (str(ICON_ASSETS / "damagelab-icon.ico"), "damage_gui/gui/assets"),
+    (str(ICON_ASSETS / "damagelab-icon.png"), "damage_gui/runtime/assets"),
+    (str(ICON_ASSETS / "damagelab-icon.ico"), "damage_gui/runtime/assets"),
 ]
 
 hiddenimports = [
@@ -54,17 +54,42 @@ hiddenimports = [
     "matplotlib.backends.backend_qtagg",
 ]
 
-# Legacy Tk desktop, web backend and unused Qt modules stay out of the
-# bundle.  damage_gui.gui.resources (icon shim) is still collected —
-# it does not import tkinter itself.
+# Legacy Tk desktop 已于 2026-10 移除；web backend 与未用 Qt 模块不进桌面包。
+# 旧打包配置中曾排除 ``tkinter`` / ``damage_gui.gui.main_window`` —— 这些模块
+# 现已不存在，留档提示即可。
 excludes = [
-    "tkinter",
-    "_tkinter",
-    "damage_gui.gui.main_window",
-    "damage_gui.desktop",
     "damage_gui.webapp",
+    "damage_gui.desktop",
     "fastapi",
     "uvicorn",
+    # scikit-learn + pandas：核心算法层已用 damage_gui.model.pod._PODBasis
+    # （numpy 全 SVD）+ damage_gui.data.table（取代 pd.DataFrame）实现，
+    # 都不再进入桌面分发包（约 -35MB+69MB）。
+    # 旧 joblib 模型反序列化需要 sklearn、旧消融实验脚本需要 pandas 时，
+    # 请改用 pip 安装 'damage-gui[data-science]' 而非桌面包。
+    "sklearn",
+    "sklearn.decomposition",
+    "sklearn.metrics",
+    "sklearn.model_selection",
+    "sklearn.utils",
+    "sklearn.ensemble",
+    "sklearn.tree",
+    "sklearn.svm",
+    "sklearn.linear_model",
+    "sklearn.neighbors",
+    "sklearn.cluster",
+    "sklearn.preprocessing",
+    "sklearn.pipeline",
+    "sklearn.base",
+    "pandas",
+    "pandas._libs",
+    "pandas._libs.tslibs",
+    "pandas.core",
+    "pandas.io",
+    "pandas.errors",
+    "pandas.util",
+    "pandas.testing",
+    "scipy.cluster",  # sklearn 专属依赖，本项目不使用
     "PySide6.QtWebEngineCore",
     "PySide6.QtWebEngineWidgets",
     "PySide6.QtWebChannel",

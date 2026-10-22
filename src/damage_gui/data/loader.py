@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 from damage_gui.config import CONFIG, Config
 from damage_gui.data.preprocessing import normalize_matrix_shape
+from damage_gui.data.table import read_csv
 
 FILENAME_PATTERN = re.compile(r"DamageMatrix_([FMP])_h_(\d+)_v_(\d+)_deg_(\d+)$")
 
@@ -97,5 +97,5 @@ def read_damage_matrix(path: Path, config: Config | None = None) -> np.ndarray:
 
 def read_source_matrix(path: Path) -> np.ndarray:
     """Read the existing format before normalization/denoising."""
-    frame = pd.read_csv(path, sep="\t", encoding="gbk", header=None, skiprows=1)
+    frame = read_csv(path, sep="\t", encoding="gbk", header=None, skiprows=1)
     return frame.dropna(axis=1, how="all").to_numpy(dtype=np.float32)

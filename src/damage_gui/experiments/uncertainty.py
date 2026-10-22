@@ -22,12 +22,12 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pandas as pd
 from scipy.stats import spearmanr
 
 from damage_gui.config import Config
 from damage_gui.data.loader import Condition, DamageRecord, read_damage_matrix
 from damage_gui.data.preprocessing import evaluation_fields, roi_mask_for_shape
+from damage_gui.data.table import Table
 from damage_gui.model.bundle import DamageModelService, build_model
 
 
@@ -97,12 +97,12 @@ class UncertaintyEstimator:
 
 def calibration_bins(
     estimates: np.ndarray, errors: np.ndarray, n_bins: int
-) -> pd.DataFrame:
+) -> Table:
     """按估计值分位数分箱，给出每箱的估计/误差均值（可靠性曲线数据）。"""
     quantiles = np.linspace(0.0, 1.0, n_bins + 1)
     edges = np.unique(np.quantile(estimates, quantiles))
     if len(edges) < 3:  # 估计值几乎无区分度时退化为单箱，如实呈现
-        return pd.DataFrame(
+        return Table(
             [{"bin": 0, "n": len(errors), "mean_estimate": float(estimates.mean()),
               "mean_error": float(errors.mean())}]
         )
@@ -122,7 +122,7 @@ def calibration_bins(
                 "mean_error": float(errors[sel].mean()),
             }
         )
-    return pd.DataFrame(rows)
+    return Table(rows)
 
 
 def _spearman(estimates: np.ndarray, errors: np.ndarray) -> float:
@@ -166,7 +166,7 @@ def run_uncertainty_study(
                 "est_residual_knn": estimator.residual_knn(record.condition),
             }
         )
-    frame = pd.DataFrame(rows)
+    frame = Table(rows)
 
     errors = frame["error"].to_numpy()
     summary: dict[str, Any] = {
@@ -189,7 +189,7 @@ def run_uncertainty_study(
     return {"summary": summary, "samples": frame, "bins": bins}
 
 
-def plot_reliability(bins: pd.DataFrame, path: str | Path, title: str) -> Path:
+def plot_reliability(bins: Table, path: str | Path, title: str) -> Path:
     """可靠性曲线：分箱均值估计 vs 分箱均值误差（对角线 = 完美校准）。"""
     import matplotlib
 
@@ -199,9 +199,10 @@ def plot_reliability(bins: pd.DataFrame, path: str | Path, title: str) -> Path:
     path = Path(path)
     figure, axis = plt.subplots(figsize=(4.2, 4.2), dpi=120)
     axis.plot(
-        bins["mean_estimate"], bins["mean_error"], marker="o", color="#1E3A8A"
+        list(bins["mean_estimate"]), list(bins["mean_error"]),
+        marker="o", color="#1E3A8A",
     )
-    limit = max(bins["mean_estimate"].max(), bins["mean_error"].max()) * 1.05
+    limit = max(max(bins["mean_estimate"]), max(bins["mean_error"])) * 1.05
     axis.plot([0, limit], [0, limit], linestyle="--", color="#64748B", linewidth=1)
     axis.set_xlabel("Mean estimated uncertainty")
     axis.set_ylabel("Mean actual error (ROI MAE, smoothed)")
@@ -223,7 +224,7 @@ def save_uncertainty_report(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     summary = study["summary"]
-    samples: pd.DataFrame = study["samples"]
+    samples: Table = study["samples"]
 
     csv_path = out / f"{name}.csv"
     samples.to_csv(csv_path, index=False, encoding="utf-8-sig")

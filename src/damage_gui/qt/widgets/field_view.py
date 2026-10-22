@@ -43,6 +43,8 @@ class FieldView(QWidget):
         self._failed = False
         self._has_result = False
         self.export_model_name = "damage"
+        self.style_figure = None
+        self.translate_figure = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -215,7 +217,10 @@ class FieldView(QWidget):
         self._has_result = True
         self._failed = False
         self.probe_readout.clear()
-        apply_scientific_theme(source, 'zh' if self._zh else 'en')
+        if self.style_figure is None:
+            apply_scientific_theme(source, 'zh' if self._zh else 'en')
+        else:
+            self.style_figure(source)
         self._toolbar.update()
         self._sync_modes()
         self.stack.setCurrentIndex(1)
@@ -247,7 +252,10 @@ class FieldView(QWidget):
 
 
     def _translate_figure(self):
-        translate_scientific_figure(self.figure, 'zh' if self._zh else 'en')
+        if self.translate_figure is None:
+            translate_scientific_figure(self.figure, 'zh' if self._zh else 'en')
+        else:
+            self.translate_figure(self.figure)
 
     def set_running(self, running):
         self._running = running

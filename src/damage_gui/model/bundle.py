@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 from damage_gui.config import CONFIG, Config, ProgressCallback
 from damage_gui.data.loader import (
@@ -16,9 +15,10 @@ from damage_gui.data.loader import (
     read_damage_matrix,
 )
 from damage_gui.data.preprocessing import evaluation_fields, roi_description, roi_mask_for_shape
+from damage_gui.data.table import Table
 from damage_gui.errors import OperationCancelled
 from damage_gui.evaluation.metrics import SPATIAL_KEYS, metric_row, spatial_metrics
-from damage_gui.experiments.baselines import LinearInterpField, NearestNeighborField
+from damage_gui.model.baselines import LinearInterpField, NearestNeighborField
 from damage_gui.model.metadata import ModelMetadata, build_metadata
 from damage_gui.model.ood import OODDetector
 from damage_gui.model.pod import PODRBFDamageField
@@ -43,8 +43,8 @@ class ModelBundle:
     model: DamageFieldModel
     train_conditions: list[dict[str, float]]
     test_conditions: list[dict[str, float]]
-    accuracy_report: pd.DataFrame = field(default_factory=pd.DataFrame)
-    condition_report: pd.DataFrame = field(default_factory=pd.DataFrame)
+    accuracy_report: Table = field(default_factory=Table)
+    condition_report: Table = field(default_factory=Table)
     ood_detector: OODDetector | None = None
     validation_mode: str = "random"
     model_type: str = "rbf"
@@ -58,6 +58,14 @@ class ModelBundle:
     def resolved_config(self) -> Config:
         """恢复训练时配置；兼容字段增减以及早期模型包。"""
         return Config.from_mapping(getattr(self, "config", None))
+
+
+@dataclass
+class EvaluationResult:
+    """Validation reports without an extra deliverable model."""
+
+    accuracy_report: Table
+    condition_report: Table
 
 
 def build_model(
@@ -109,7 +117,8 @@ class DamageModelService:
         cancel_check=None,
         held_out_value: float | None = None,
         evaluation_observer=None,
-    ) -> ModelBundle:
+        evaluation_only: bool = False,
+    ) -> ModelBundle | EvaluationResult:
         """训练并评估模型。
 
         验证模式：
@@ -153,7 +162,7 @@ class DamageModelService:
             return matrix_cache[record.path]
 
         total_units = sum(len(s.train) for s in splits) + sum(len(s.test) for s in splits)
-        if is_loo:
+        if is_loo and not evaluation_only:
             total_units += len(records)  # 最终全量重训练的读取
         done = 0
 
@@ -206,6 +215,10 @@ class DamageModelService:
                 deliverable_model = model
                 deliverable_train_records = list(split.train)
 
+        if evaluation_only:
+            accuracy_report, condition_report = self._evaluate_pairs(level, pairs)
+            return EvaluationResult(accuracy_report, condition_report)
+
         if is_loo:
             # 折外指标已聚合完毕；交付模型使用全部工况重新训练
             conditions = np.zeros((len(records), 3), dtype=np.float64)
@@ -236,7 +249,7 @@ class DamageModelService:
             level=level,
             data_dir=str(self.data_manager.data_dir),
             target_shape=config.target_shape,
-            config=config.__dict__.copy(),
+            config=config.scientific_mapping(),
             model=deliverable_model,
             train_conditions=[r.condition.as_dict() for r in deliverable_train_records],
             test_conditions=[r.condition.as_dict() for r in test_records],
@@ -286,7 +299,7 @@ class DamageModelService:
         self,
         level: str,
         pairs: list[tuple[DamageRecord, np.ndarray, np.ndarray]],
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    ) -> tuple[Table, Table]:
         """对 (记录, 真值, 预测) 列表做 Raw / Smoothed 双口径 + 空间指标评估。
 
         预测已在训练循环中完成并计入进度，此处仅做指标汇总，不再上报进度。
@@ -459,10 +472,10 @@ class DamageModelService:
             spatial_row[key] = float(np.mean(values)) if values else np.nan
         accuracy_rows.append(spatial_row)
 
-        accuracy_report = pd.DataFrame(accuracy_rows)
+        accuracy_report = Table(accuracy_rows)
         accuracy_report.insert(0, "level", level)
         if "field" in accuracy_report.columns:
             field_col = accuracy_report.pop("field")
             accuracy_report.insert(1, "field", field_col)
-        condition_report = pd.DataFrame(condition_rows)
+        condition_report = Table(condition_rows)
         return accuracy_report, condition_report

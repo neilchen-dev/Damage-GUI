@@ -22,6 +22,7 @@ from damage_gui.model.metadata import (
     training_data_hash,
 )
 from damage_gui.model.registry import load_model, save_model
+from damage_gui.model.signing import sign_existing_model
 from synthetic_data import make_service, make_synthetic_dataset
 
 
@@ -161,6 +162,7 @@ class RegistryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bad = Path(tmp) / "broken.joblib"
             bad.write_bytes(b"this is not a joblib file")
+            sign_existing_model(bad)
             with self.assertRaisesRegex(ModelLoadError, "损坏"):
                 load_model(bad)
 
@@ -168,6 +170,7 @@ class RegistryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             wrong = Path(tmp) / "wrong.joblib"
             joblib.dump({"not": "a bundle"}, wrong)
+            sign_existing_model(wrong)
             with self.assertRaisesRegex(ModelLoadError, "不是 ModelBundle"):
                 load_model(wrong)
 
@@ -191,6 +194,7 @@ class RegistryTests(unittest.TestCase):
             legacy = dataclasses.replace(self.bundle, metadata=None)
             legacy_path = Path(tmp) / "legacy.joblib"
             joblib.dump(legacy, legacy_path)
+            sign_existing_model(legacy_path)
             loaded = load_model(legacy_path)
             self.assertIsNone(getattr(loaded, "metadata", None))
 

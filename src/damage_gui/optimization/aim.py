@@ -30,6 +30,23 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal import fftconvolve
 
+# Bound both kernel dimensions before any NumPy allocation. FFT temporaries
+# consume several times the kernel size, so keep the kernel below 8 MiB.
+MAX_KERNEL_ELEMENTS = 1_000_000
+
+
+def _half_extent(sigma: float, pixel_size: float, truncate: float) -> int:
+    extent = truncate * sigma / pixel_size
+    if not math.isfinite(extent) or extent > MAX_KERNEL_ELEMENTS:
+        raise ValueError("散布参数过大：概率核超过内存预算")
+    return max(1, int(math.ceil(extent)))
+
+
+def _check_kernel_size(half_x: int, half_y: int) -> None:
+    if (2 * half_x + 1) * (2 * half_y + 1) > MAX_KERNEL_ELEMENTS:
+        raise ValueError("散布参数过大：概率核超过内存预算，请减小 CEP / REP / DEP")
+
+
 # ===================== CEP / sigma 转换 =====================
 
 def cep_to_sigma(cep: float) -> float:
@@ -156,8 +173,9 @@ def gaussian_sampled_probability_kernel(
     if sigma_x == 0 and sigma_y == 0:
         return np.array([[1.0]], dtype=np.float64)
 
-    half_x = max(1, int(math.ceil(truncate * sigma_x / pixel_size_x))) if sigma_x > 0 else 1
-    half_y = max(1, int(math.ceil(truncate * sigma_y / pixel_size_y))) if sigma_y > 0 else 1
+    half_x = _half_extent(sigma_x, pixel_size_x, truncate) if sigma_x > 0 else 1
+    half_y = _half_extent(sigma_y, pixel_size_y, truncate) if sigma_y > 0 else 1
+    _check_kernel_size(half_x, half_y)
     x = np.arange(-half_x, half_x + 1, dtype=np.float64) * pixel_size_x
     y = np.arange(-half_y, half_y + 1, dtype=np.float64) * pixel_size_y
     wx = np.exp(-0.5 * (x / sigma_x) ** 2) if sigma_x > 0 else (x == 0).astype(float)
@@ -208,9 +226,10 @@ def gaussian_cell_probability_kernel(
     sx = max(sigma_x, 1e-10)
     sy = max(sigma_y, 1e-10)
 
-    half_x = max(1, int(math.ceil(truncate * sx / pixel_size_x)))
-    half_y = max(1, int(math.ceil(truncate * sy / pixel_size_y)))
+    half_x = _half_extent(sx, pixel_size_x, truncate)
+    half_y = _half_extent(sy, pixel_size_y, truncate)
 
+    _check_kernel_size(half_x, half_y)
     x_centers = np.arange(-half_x, half_x + 1, dtype=np.float64) * pixel_size_x
     x_lower = x_centers - pixel_size_x / 2.0
     x_upper = x_centers + pixel_size_x / 2.0
@@ -329,8 +348,9 @@ def correlated_gaussian_kernel(
     sy = max(sigma_y, 1e-10)
     one_minus_rho_sq = max(1.0 - rho * rho, 1e-12)
 
-    half_x = max(1, int(math.ceil(truncate * max(sx, sy) / pixel_size_x)))
-    half_y = max(1, int(math.ceil(truncate * max(sx, sy) / pixel_size_y)))
+    half_x = _half_extent(max(sx, sy), pixel_size_x, truncate)
+    half_y = _half_extent(max(sx, sy), pixel_size_y, truncate)
+    _check_kernel_size(half_x, half_y)
     x = np.arange(-half_x, half_x + 1, dtype=np.float64) * pixel_size_x
     y = np.arange(-half_y, half_y + 1, dtype=np.float64) * pixel_size_y
     grid_x, grid_y = np.meshgrid(x, y)

@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from damage_gui import __version__
+from damage_gui.config import VERSION as __version__  # 直接取自 config，避免中层依赖包根
 from damage_gui.errors import ModelLoadError
 from damage_gui.evaluation.metrics import extract_core_metrics
 

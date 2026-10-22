@@ -1,6 +1,9 @@
+# 核心运行时依赖（与 pyproject.toml [project.dependencies] 保持一致）。
+# pandas / scikit-learn 已移出核心链路：
+#   - 旧 joblib 模型反序列化 → pip install "damage-gui[legacy]"
+#   - 研究脚本 / 消融实验   → pip install "damage-gui[data-science]"
+#   - 桌面 / Web / 测试     → extras desktop / web / test
 joblib>=1.3,<2
 matplotlib>=3.8,<4
 numpy>=1.26,<3
-pandas>=2.1,<3
-scikit-learn>=1.4,<2
 scipy>=1.11,<2

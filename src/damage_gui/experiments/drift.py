@@ -20,35 +20,33 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import pandas as pd
 from scipy.stats import ks_2samp
 
 from damage_gui.config import Config
+from damage_gui.data.table import isna, read_csv, to_numeric
 from damage_gui.errors import DataValidationError
 
 DIMENSIONS = ("h", "v", "deg")
 
 
-def _conditions_frame(records) -> pd.DataFrame:
-    return pd.DataFrame(
-        [record.condition.as_dict() for record in records],
-        columns=list(DIMENSIONS),
-    )
-
-
 def load_query_conditions(path: str | Path) -> np.ndarray:
     """解析查询工况 CSV：必须含 h/v/deg 三列，行级非法值直接拒绝。"""
     try:
-        frame = pd.read_csv(path)
+        frame = read_csv(path)
     except Exception as exc:
         raise DataValidationError(f"查询工况 CSV 不可读: {exc}") from exc
     missing = [name for name in DIMENSIONS if name not in frame.columns]
     if missing:
         raise DataValidationError(f"查询工况 CSV 缺少列: {missing}")
     values = frame[list(DIMENSIONS)]
-    if not values.apply(pd.to_numeric, errors="coerce").notna().all().all():
+    # pandas.to_numeric(errors="coerce") 语义：非法/缺失 -> NaN，逐格拒绝
+    numeric = [
+        [to_numeric(row.get(name)) for name in DIMENSIONS]
+        for _, row in values.iterrows()
+    ]
+    if any(isna(value) for row in numeric for value in row):
         raise DataValidationError("查询工况 CSV 存在非数值或缺失的 h/v/deg")
-    return values.to_numpy(dtype=np.float64)
+    return np.asarray(numeric, dtype=np.float64)
 
 
 def drift_report(

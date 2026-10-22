@@ -72,6 +72,8 @@ class ValidationWorkflow(QObject):
                            ood_summary=dict(Counter(row['confidence'] for row in result.samples)),
                            outside_global_support=sum(row['outside_global_support'] for row in result.samples),
                            local_support_insufficient=sum(row['local_support_insufficient'] for row in result.samples))
+            sidecar_saved=False
+            sidecar=None
             try:
                 directory=db.parent/'validation_results'
                 directory.mkdir(parents=True,exist_ok=True)
@@ -79,9 +81,12 @@ class ValidationWorkflow(QObject):
                 with sidecar.open('x',encoding='utf-8') as stream:
                     json.dump(clean(dict(payload,samples=result.samples)),stream,ensure_ascii=False,allow_nan=False,indent=2)
                 payload['result_sidecar']=str(sidecar.resolve())
-            except OSError:
+                sidecar_saved=True
+            except (OSError, TypeError, ValueError):
                 logger.exception('Validation sample sidecar persistence failed')
-            state['persisted']=bool(model_ok and recorded and started)
+                if sidecar is not None:
+                    sidecar.unlink(missing_ok=True)
+            state['persisted']=bool(model_ok and recorded and started and sidecar_saved)
             return result
         self._db=db
         self._metadata=metadata

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from damage_gui.gui.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, Translator
+from damage_gui.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, Translator
 
 
 class TranslatorTests(unittest.TestCase):

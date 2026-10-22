@@ -81,11 +81,14 @@ class StoreTests(unittest.TestCase):
                 )
                 frame = compare_runs(store, ids)
                 self.assertEqual(frame.shape[1], 2)
-                self.assertTrue(frame.index.isin(["experiment", "status"]).any())
+                index_labels = frame.index.tolist()
+                self.assertIn("experiment", index_labels)
+                self.assertIn("status", index_labels)
                 a_col = frame.columns[0]
-                self.assertEqual(frame.loc["experiment", a_col], "a")
+                by_label = {label: row for label, row in frame.iterrows()}
+                self.assertEqual(by_label["experiment"][a_col], "a")
                 self.assertAlmostEqual(
-                    float(frame.loc["mean_relative_error", a_col]), 0.10
+                    float(by_label["mean_relative_error"][a_col]), 0.10
                 )
 
 

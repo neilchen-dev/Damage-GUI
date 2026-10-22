@@ -1,10 +1,14 @@
 # Direct runtime pins used by the Linux web image.
 # Regenerate this file deliberately when upgrading the production image.
+#
+# 已从 Web 镜像移除：
+#   - scikit-learn（约 -35MB） → 核心训练/预测由 numpy 全 SVD 替代
+#   - pandas （约 -69MB）    → 核心链路使用 damage_gui.data.table
+# 若需加载旧版 joblib 模型，请额外安装 damage-gui[legacy]；
+# 跑消融实验请额外安装 damage-gui[data-science]。
 joblib==1.5.3
 matplotlib==3.11.1
 numpy==2.5.2
-pandas==2.3.3
-scikit-learn==1.9.0
 scipy==1.18.1
 fastapi==0.141.1
 httpx2==2.12.0

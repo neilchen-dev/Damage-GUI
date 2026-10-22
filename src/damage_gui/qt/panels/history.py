@@ -99,6 +99,12 @@ class HistoryWorkspace(QWidget):
         self.refresh()
 
     def refresh(self):
+        self.selected_id = None
+        self._detail_data = None
+        self.detail.clear()
+        self.rows_model.replace([])
+        self.rows.hide()
+        self.restore_button.setEnabled(False)
         self.message.setText('…')
         self.workflow.load_history(self.kind.currentData(),self.status.currentData(),self.offset,self.model_filter.text().strip())
 

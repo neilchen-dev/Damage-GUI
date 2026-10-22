@@ -14,8 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
+from damage_gui.data.table import Table
 from damage_gui.errors import LifecycleError, ModelLoadError
 from damage_gui.model.metadata import ModelMetadata, sidecar_path
 
@@ -178,7 +177,7 @@ class ModelRegistry:
 
     def list_models(
         self, level: str | None = None, status: str | None = None
-    ) -> pd.DataFrame:
+    ) -> Table:
         query = "SELECT * FROM models"
         clauses, params = [], []
         if level is not None:
@@ -193,4 +192,4 @@ class ModelRegistry:
             query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY id"
         rows = self._conn.execute(query, params).fetchall()
-        return pd.DataFrame([dict(row) for row in rows], columns=list(_LIST_COLUMNS))
+        return Table([dict(row) for row in rows], columns=list(_LIST_COLUMNS))

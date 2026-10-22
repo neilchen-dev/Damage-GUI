@@ -6,7 +6,7 @@ from pathlib import Path
 
 def test_validation_workflow(tmp_path):
     root=Path(__file__).resolve().parents[1]
-    result=subprocess.run([sys.executable,str(root/'scripts/capture_qt_validation.py'),str(tmp_path)],
+    result=subprocess.run([sys.executable,str(root/'scripts/archive/capture_qt_validation.py'),str(tmp_path)],
                           env={**os.environ,'QT_QPA_PLATFORM':'offscreen'},capture_output=True,text=True,timeout=180)
     assert result.returncode==0,result.stdout+result.stderr
 

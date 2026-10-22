@@ -4,6 +4,9 @@ from pathlib import Path
 
 from damage_gui.visualization.theme import DARK_SCIENTIFIC
 
+# Bundled SVG icon directory (single source: qt/icons.py re-uses this).
+ICON_DIR = Path(__file__).with_name("icons")
+
 # Shared spacing and type scale, in logical pixels.
 XS, SM, MD, LG, XL = 4, 8, 12, 16, 24
 APP_TITLE, WORKSPACE_TITLE, SECTION, BODY, METADATA = 13, 16, 11, 12, 11
@@ -44,7 +47,7 @@ class QtTheme:
 
 def build_stylesheet(theme=None):
     t = theme or QtTheme()
-    icons = Path(__file__).with_name("icons").as_posix()
+    icons = ICON_DIR.as_posix()
     return f"""
     QWidget {{ color: {t.text}; font-size: 12px; }}
     QMainWindow {{ background: {t.bg}; }}
