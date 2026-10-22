@@ -15,15 +15,21 @@ from damage_gui import __version__
 class ProjectMetadataTests(unittest.TestCase):
     def test_versions_are_consistent(self) -> None:
         project_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        release_script = (ROOT / "scripts" / "build_release.bat").read_text(
+        project_match = re.search(r'^version = "([^"\r\n]+)"', project_text, re.MULTILINE)
+        self.assertIsNotNone(project_match)
+        self.assertEqual(project_match.group(1), __version__)
+
+    def test_desktop_entry_points_and_resources_use_qt(self) -> None:
+        project_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        desktop_text = (ROOT / "src" / "damage_gui" / "desktop.py").read_text(
             encoding="utf-8"
         )
-        project_match = re.search(r'^version = "([^"\r\n]+)"', project_text, re.MULTILINE)
-        release_match = re.search(r'set "VERSION=v([^"\r\n]+)"', release_script)
-        self.assertIsNotNone(project_match)
-        self.assertIsNotNone(release_match)
-        self.assertEqual(project_match.group(1), __version__)
-        self.assertEqual(release_match.group(1), __version__)
+        self.assertIn('damage-gui = "damage_gui.desktop:main"', project_text)
+        self.assertIn('damage-gui-qt = "damage_gui.qt.app:main"', project_text)
+        self.assertIn("from damage_gui.qt.app import main", desktop_text)
+        self.assertIn('"runtime/assets/*.png"', project_text)
+        self.assertIn('"runtime/assets/*.ico"', project_text)
+        self.assertFalse((ROOT / "src" / "damage_gui" / "gui").exists())
 
     def test_declared_license_file_exists(self) -> None:
         self.assertTrue((ROOT / "LICENSE").is_file())
