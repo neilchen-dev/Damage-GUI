@@ -308,6 +308,8 @@ class WebApiTests(unittest.TestCase):
             data_dir=self.data_dir,
         )
         try:
+            # Process startup recovery runs after runtime paths and SQLite are ready.
+            restarted.state.web_jobs.initialize()
             recovered = JobRepository(self.db_path).get_job(stale_id)
             self.assertIsNotNone(recovered)
             self.assertEqual(recovered["status"], "FAILED")
