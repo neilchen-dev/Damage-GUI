@@ -28,11 +28,11 @@
 | Registry | 公共页头、可滚动检查器 | 五区详情、公共表格、统一空态 | 原 Activate/Register/History | 已检查 |
 | History | 公共页头、可滚动检查器 | 五区详情、公共表格 | 原筛选/分页/Restore、公共状态 | 已检查 |
 
-本轮主要代码位于 `src/damage_gui/qt/`，新增验收入口 `scripts/capture_qt_consolidation.py` 和 `tests/test_qt_consolidation.py`。输出 ID 与数据库路径见 `outputs/qt_phase24_ui/evidence.json`。
+本轮主要代码位于 `src/damage_gui/qt/`，新增验收入口 `scripts/archive/capture_qt_consolidation.py` 和 `tests/test_qt_consolidation.py`。输出 ID 与数据库路径见 `outputs/qt_phase24_ui/evidence.json`。
 
 复现：
 
 ```sh
-QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_qt_consolidation.py
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/archive/capture_qt_consolidation.py
 .venv/bin/python -m pytest -q
 ```

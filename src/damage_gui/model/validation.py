@@ -59,21 +59,51 @@ class ValidationSplit:
 def _random_split(
     records: list[DamageRecord], config: Config
 ) -> list[ValidationSplit]:
+    """随机留出切分。
+
+    sklearn 行为复现策略（保证数值回归 golden 不漂移）：
+
+    - ``sklearn.model_selection.train_test_split`` 存在时直接走 sklearn：
+      精确保留项目的 ``test_size`` 舍入规则与 ``random_state`` 语义。
+    - sklearn 缺位时降级到 ``numpy.random.default_rng`` 复现同一行为；
+      该路径下需要 ``pip install damage-gui[legacy]`` 才能与既有 golden
+      完全一致，文档已说明。
+
+    该函数保持惰性 import：训练链路按需加载。
+    """
     import numpy as np
-    from sklearn.model_selection import train_test_split
 
     if len(records) <= 6:
+        # 极少样本：保留既有"最后 1 个为测试"行为，与 sklearn 路径无关
         shuffled = list(records)
         rng = np.random.default_rng(config.random_state)
         rng.shuffle(shuffled)
         train, test = shuffled[:-1], shuffled[-1:]
     else:
-        train, test = train_test_split(
-            records,
-            test_size=config.test_size,
-            random_state=config.random_state,
-            shuffle=True,
-        )
+        try:
+            from sklearn.model_selection import train_test_split  # type: ignore
+        except ImportError:
+            # numpy 降级路径：严格复现 sklearn ShuffleSplit 的行为
+            #   1. _validate_shuffle_split: n_test = ceil(n * test_size)
+            #   2. shuffle=True: permutation = RandomState(seed).permutation(n)
+            #      —— 注意是 legacy MT19937（RandomState），不是 default_rng 的
+            #      PCG64；两者生成的排列不同，必须对齐 seed 语义。
+            #   3. test = perm[:n_test]；train = perm[n_test:]
+            # 这样 [core]（无 sklearn）与 [full]（有 sklearn）切分完全一致，
+            # 保证"可追溯交付"在不同安装下得到同一结果。
+            n = len(records)
+            n_test = max(1, int(np.ceil(n * config.test_size)))
+            n_test = min(n_test, n - 1)
+            perm = np.random.RandomState(config.random_state).permutation(n)
+            test = [records[i] for i in perm[:n_test]]
+            train = [records[i] for i in perm[n_test:]]
+        else:
+            train, test = train_test_split(
+                records,
+                test_size=config.test_size,
+                random_state=config.random_state,
+                shuffle=True,
+            )
     return [
         ValidationSplit(
             mode="random",

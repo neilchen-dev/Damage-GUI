@@ -1,6 +1,5 @@
 """Opt-in viewport colors must not alter numerical fields or legacy rendering."""
 import gc
-import importlib.util
 import os
 import subprocess
 import sys
@@ -145,8 +144,25 @@ print("OK")
 
 
 def test_legacy_tk_import_without_a_window():
-    if importlib.util.find_spec("tkinter") is None or importlib.util.find_spec("_tkinter") is None:
-        pytest.skip("Tkinter unavailable in this Python build")
-    result = subprocess.run([sys.executable, "-c", "import damage_gui.gui.main_window"],
-                            capture_output=True, text=True, timeout=60)
+    """Tk 桌面于 2026-10 整体退役——保留占位测试以便历史报告交叉引用。
+
+    检查 damage_gui.app（兼容层）能在没有任何 GUI 子模块被实际加载的
+    前提下干净启动。这正是过去由 legacy_tk 守卫承担的不变量。
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", "import damage_gui.app"],
+        capture_output=True, text=True, timeout=60,
+    )
     assert result.returncode == 0, result.stdout + result.stderr
+    # app 在导入期不应拉起 matplotlib/Tk（与原 lazy 守卫语义一致）
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import sys, damage_gui.app; "
+         "assert 'matplotlib' not in sys.modules; "
+         "assert 'tkinter' not in sys.modules; "
+         "print('OK')"],
+        capture_output=True, text=True, timeout=60,
+        env={**os.environ, "MPLBACKEND": "Agg"},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "OK" in result.stdout

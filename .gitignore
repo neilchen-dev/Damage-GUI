@@ -85,6 +85,11 @@ logs/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+# 仓库根目录的运行期 sqlite/db（训练 / 验证运行产生，不入库）
+/damage_gui.db
+/damage_gui_registry.sqlite
+# M3 验证期会持续生成的临时验证证据（已被 freeze 政策固化到 examples/）
+/validation_results/
 
 # Release-acceptance scratch output (per-phase screenshots / reports / test DBs)
 outputs/

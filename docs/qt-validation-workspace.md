@@ -2,7 +2,7 @@
 
 Implemented on `qt-redesign`, retaining the existing workbench and numerical algorithms.
 
-1. **Files.** New `services/validation_service.py`, `qt/validation_workflow.py`, `qt/panels/validation.py`, `scripts/capture_qt_validation.py`, `tests/test_qt_validation.py`, `tests/test_validation_service.py`, `tests/test_validation_storage_migration.py`, and this report. Updated `model/bundle.py`, `storage/db.py`, Qt workflow/main-window/history/task-adapter/i18n/theme, Prediction/Batch busy guards, the synthetic fixture's optional axis values, and navigation test expectations.
+1. **Files.** New `services/validation_service.py`, `qt/validation_workflow.py`, `qt/panels/validation.py`, `scripts/archive/capture_qt_validation.py`, `tests/test_qt_validation.py`, `tests/test_validation_service.py`, `tests/test_validation_storage_migration.py`, and this report. Updated `model/bundle.py`, `storage/db.py`, Qt workflow/main-window/history/task-adapter/i18n/theme, Prediction/Batch busy guards, the synthetic fixture's optional axis values, and navigation test expectations.
 2. **Architecture.** The dark Validation workspace contains Overview, Samples, Comparison, and a single Distribution chart. A light inspector owns truth directory, mode-specific parameters, Raw/Smoothed presentation, Run/Cancel, and JSON export. ValidationWorkflow drives the existing TaskManager/TaskAdapter and repositories. Truth discovery and solver compatibility checks also run in background workers. RBF and POD-RBF are supported; another scientific job prevents submission while a shared model could be used concurrently.
 3. **Five modes.** The real identifiers remain `random`, `leave_h_out`, `leave_v_out`, `leave_deg_out`, and `corner`. The existing `make_splits` and `DamageModelService.train_bundle` perform splitting, fitting, prediction, and evaluation. Two optional hooks were added without changing default behavior: select an existing layer fold, and observe completed fold pairs. Layer modes can run all folds or one actual layer. Corner uses only the existing velocity/angle thresholds, not a fabricated height region. Existing random seed/test fraction are configurable. Validation assesses a refitted method/configuration; it does not benchmark immutable loaded weights or replace the loaded model.
 4. **Raw/Smoothed.** The default is Raw. Switching only selects existing report values and rebuilds presentation; it does not train or recompute metrics. Numerical summaries explicitly show the actual damage scope. Sample error columns select existing Raw/smoothed fields. Spatial metrics remain Raw in both views. History restore uses the metric view captured at submission.
@@ -21,6 +21,6 @@ Implemented on `qt-redesign`, retaining the existing workbench and numerical alg
 Reproduce:
 
 ```sh
-QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_qt_validation.py
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/archive/capture_qt_validation.py
 .venv/bin/python -m pytest -q
 ```

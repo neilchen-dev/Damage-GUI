@@ -4,7 +4,7 @@
 
 ## Tests
 
-- [ ] `pytest tests/ -q` 全部通过（当前 259 passed）
+- [ ] `pytest tests/ -q` 全部通过（本次本地审计：324 passed）
 - [ ] `PYTHONPATH=src python -m unittest discover -s tests` 通过（CI 口径）
 - [ ] `git diff --check` 无空白错误
 - [ ] `ruff check .` 通过
@@ -54,4 +54,4 @@
 
 - [ ] CLI（damage-gui-cli info / predict / batch）正常
 - [ ] FastAPI Web 启动正常
-- [ ] legacy Tkinter 桌面（damage-gui）可启动（如保留）
+- [ ] 旧模型经来源核验并签名后可加载；未签名模型被拒绝

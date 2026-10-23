@@ -16,11 +16,11 @@ from damage_gui.config import CONFIG  # noqa: E402
 from damage_gui.data.loader import Condition  # noqa: E402
 from damage_gui.data.preprocessing import roi_mask_for_shape  # noqa: E402
 from damage_gui.errors import ModelFitError  # noqa: E402
-from damage_gui.experiments.baselines import (  # noqa: E402
+from damage_gui.experiments.runner import baseline_specs, run_suite  # noqa: E402
+from damage_gui.model.baselines import (  # noqa: E402
     LinearInterpField,
     NearestNeighborField,
 )
-from damage_gui.experiments.runner import baseline_specs, run_suite  # noqa: E402
 from damage_gui.model.bundle import build_model  # noqa: E402
 from synthetic_data import make_service, make_synthetic_dataset  # noqa: E402
 

@@ -2,7 +2,7 @@
 
 Implemented on `qt-redesign`. Existing batch algorithms, TaskManager, and SQLite schema are unchanged.
 
-1. **Files.** New `qt/workflow.py`, `qt/panels/batch.py`, `qt/panels/history.py`, `qt/log_bridge.py`, `scripts/capture_qt_batch_workflow.py`, and `tests/test_qt_batch_workflow.py`. Updated `qt/main_window.py`, `qt/task_adapter.py`, `qt/widgets/activity_panel.py`, `qt/theme.py`, `storage/repositories.py`, and the existing Qt navigation regression expectations.
+1. **Files.** New `qt/workflow.py`, `qt/panels/batch.py`, `qt/panels/history.py`, `qt/log_bridge.py`, `scripts/archive/capture_qt_batch_workflow.py`, and `tests/test_qt_batch_workflow.py`. Updated `qt/main_window.py`, `qt/task_adapter.py`, `qt/widgets/activity_panel.py`, `qt/theme.py`, `storage/repositories.py`, and the existing Qt navigation regression expectations.
 2. **Batch architecture.** `BatchWorkspace` owns the dark summary/preview and a separate light inspector. `Workflow` connects presentation signals to `BatchService`. The parser remains authoritative: required `h/v/deg`, optional `job_id/level`, supported levels F/M/P. Schema-invalid rows remain visible and executable as runner-generated failed outcomes; file-level errors prevent submission. Error summary shows at most ten rows. CSV preview contains at most 100 records.
 3. **TaskManager.** CSV parsing, batch execution, DB reads/writes, and final state reconciliation run through the existing manager and Qt adapter. No runner or repository operation runs directly on the UI thread. Activity shows session jobs, while History independently reads persisted jobs.
 4. **Progress/cancel.** Existing runner callbacks report the completed count before each next row. The wrapper reports the final processed count. Qt coalesces progress events per poll; the 5 px bar avoids excessive repainting. Cancellation requests the existing cooperative flag, retains completed outcomes and CSV, and reconciles SQLite with the TaskManager terminal state, including late cancellation. The adapter handles the manager's pre-start cancellation path without introducing another status. Closing the window waits for active work to finish its cancellation/persistence path.
@@ -18,6 +18,6 @@ Implemented on `qt-redesign`. Existing batch algorithms, TaskManager, and SQLite
 Run the reproducible workflow and capture:
 
 ```sh
-QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_qt_batch_workflow.py
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/archive/capture_qt_batch_workflow.py
 .venv/bin/python -m pytest -q
 ```

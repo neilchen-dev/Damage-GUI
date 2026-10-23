@@ -13,8 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
+from damage_gui.data.table import Table
 from damage_gui.experiments.runner import ExperimentResult
 
 #: 相对仓库根目录的默认数据库路径（CLI 与 run_experiments 共用）
@@ -88,7 +87,7 @@ class ExperimentStore:
         self._conn.commit()
         return ids
 
-    def list_runs(self, limit: int = 50) -> pd.DataFrame:
+    def list_runs(self, limit: int = 50) -> Table:
         """按 id 倒序返回摘要视图（新记录在前）。"""
         rows = self._conn.execute(
             "SELECT id, inserted_at, payload_json FROM experiments"
@@ -102,7 +101,7 @@ class ExperimentStore:
             item["id"] = row["id"]
             item["inserted_at"] = row["inserted_at"]
             records.append(item)
-        return pd.DataFrame(records, columns=list(_LIST_COLUMNS))
+        return Table(records, columns=list(_LIST_COLUMNS))
 
     def get_run(self, run_id: int) -> dict[str, Any]:
         row = self._conn.execute(
@@ -117,7 +116,7 @@ class ExperimentStore:
         return payload
 
 
-def compare_runs(store: ExperimentStore, run_ids: list[int]) -> pd.DataFrame:
+def compare_runs(store: ExperimentStore, run_ids: list[int]) -> Table:
     """并排对比若干记录的配置与指标；行=字段，列=记录。"""
     payloads = [store.get_run(run_id) for run_id in run_ids]
     columns = [f"#{p['id']} {p['experiment']}" for p in payloads]
@@ -129,4 +128,4 @@ def compare_runs(store: ExperimentStore, run_ids: list[int]) -> pd.DataFrame:
                 continue
             keys.append(key)
     rows = {key: [payload.get(key) for payload in payloads] for key in keys}
-    return pd.DataFrame(rows, index=columns).T
+    return Table(rows, index=columns).T

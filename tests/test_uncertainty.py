@@ -7,13 +7,13 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 from damage_gui.data.loader import Condition  # noqa: E402
+from damage_gui.data.table import Table  # noqa: E402
 from damage_gui.experiments.uncertainty import (  # noqa: E402
     UncertaintyEstimator,
     calibration_bins,
@@ -47,9 +47,11 @@ class CalibrationBinsTests(unittest.TestCase):
         bins = calibration_bins(estimates, errors, n_bins=4)
         self.assertEqual(len(bins), 4)
         np.testing.assert_allclose(
-            bins["mean_estimate"], bins["mean_error"], atol=1e-12
+            bins["mean_estimate"].to_numpy(), bins["mean_error"].to_numpy(),
+            atol=1e-12,
         )
-        self.assertTrue((bins["mean_error"].diff().dropna() >= 0).all())
+        diffs = np.diff(bins["mean_error"].to_numpy(dtype=float))
+        self.assertTrue((diffs >= 0).all())
 
     def test_degenerate_estimates_collapse_to_single_bin(self) -> None:
         bins = calibration_bins(np.zeros(10), np.linspace(0, 1, 10), n_bins=4)
@@ -84,7 +86,7 @@ class UncertaintyStudyTests(unittest.TestCase):
         for key in ("error", "est_distance", "est_residual_knn"):
             self.assertTrue(np.isfinite(samples[key]).all())
         for bins in study["bins"].values():
-            self.assertIsInstance(bins, pd.DataFrame)
+            self.assertIsInstance(bins, Table)
             self.assertFalse(bins.empty)
 
         with tempfile.TemporaryDirectory() as out:

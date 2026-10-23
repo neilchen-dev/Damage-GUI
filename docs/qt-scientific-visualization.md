@@ -57,7 +57,7 @@ Tkinter import 测试唯一跳过：本地 Homebrew Python 3.14 有 tkinter Pyth
 原生 macOS 测试：
 
 ```sh
-QT_QPA_PLATFORM=cocoa .venv/bin/python scripts/capture_qt_loaded_states.py --output outputs/qt_phase19_retina
+QT_QPA_PLATFORM=cocoa .venv/bin/python scripts/archive/capture_qt_loaded_states.py --output outputs/qt_phase19_retina
 ```
 
 原生 Cocoa 已完成真实合成模型预测与图像导出，**device_pixel_ratio=2**，canvas DPI=200、PNG export=300；抓图与 buffer size 的比例断言通过，截图已检查。macOS 对超出当前屏幕可用高度的窗口进行限制，因此 native 文件名标记的是请求尺寸；`evidence.json` 的每张 capture 记录实际 logical window 与 image pixel dimensions。例如请求 1440×900 的 native 图实际约 1440×831–832，抓图约 2880×1662–1664；1280×720 抓图为 2560×1440。四种指定尺寸的精确布局验收由 offscreen 测试覆盖，不以屏幕受限的 native 窗口冒充精确尺寸。
@@ -65,7 +65,7 @@ QT_QPA_PLATFORM=cocoa .venv/bin/python scripts/capture_qt_loaded_states.py --out
 ## 截图与重现
 
 ```sh
-QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_qt_loaded_states.py
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/archive/capture_qt_loaded_states.py
 ```
 
 路径：`outputs/qt_phase19/`；Retina native：`outputs/qt_phase19_retina/`。

@@ -124,6 +124,14 @@ class Config:
     ui_danger: str = "#B91C1C"
     ui_busy: str = "#B45309"
 
+    def scientific_mapping(self) -> dict[str, Any]:
+        """Persist model settings without desktop presentation colors."""
+        return {
+            item.name: getattr(self, item.name)
+            for item in fields(self)
+            if not item.name.startswith("ui_")
+        }
+
     @classmethod
     def from_mapping(cls, values: Mapping[str, Any] | None) -> Config:
         """从模型包等外部映射恢复配置，忽略未来或旧版本的未知字段。"""
@@ -135,7 +143,7 @@ class Config:
 
 CONFIG = Config()
 VERSION = "2.2.0"
-APP_TITLE = "基于数据驱动的毁伤效能快速评估方法研究"
+APP_TITLE = "基于POD-RBF代理模型的弹药毁伤智能化快速评估系统"
 
 # 毁伤强度：单色调科学渐变，浅色=未毁伤，深蓝=完全毁伤（对色弱友好，无廉价感）
 DAMAGE_CMAP = "YlGnBu"

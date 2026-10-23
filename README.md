@@ -1,4 +1,4 @@
-# 基于数据驱动的毁伤场快速预测系统
+# 基于POD-RBF代理模型的弹药毁伤智能化快速评估系统
 
 ![DamageLab](src/damage_gui/webapp/static/assets/damagelab-icon.png)
 
@@ -42,10 +42,13 @@
 ## 软件架构（Software Architecture）
 
 ```text
-Desktop GUI (PySide6/Qt) ─┐  训练 / 预测 / 批量 / 验证 / 模型库 / 历史
-Desktop GUI (Tk legacy) ──┤  旧版工作台（pip 入口 damage-gui 保留）
+Desktop GUI (PySide6/Qt) ─┐  训练 / 预测 / 批量 / 验证 / 模型库 / 历史（2.2+ 主线）
 CLI (damage-gui-cli) ─────┤  info / predict / batch
 研究脚本 (scripts/) ──────┘
+
+> 2026-10 起 Tk legacy 桌面退役：``damage_gui.gui`` 子树（2847 行）
+> 整体移除，``damage-gui-tk`` 入口脚本与 ``[desktop-tk]`` extra 删除。
+> 桌面包从此**只有 Qt 一份**——见 `docs/architecture-audit.md` 章节 7。
             ↓
 Application Services          TaskManager（任务状态机 + 协作式取消）
                               DamageModelService（训练编排 + 评估）
@@ -72,25 +75,27 @@ Storage / Files               SQLite 追溯库（models / jobs / prediction_resu
 - **可复现的结构化验证**：五种验证模式（随机留出 / 三种整层留出 / 角落外推）+ 固定随机种子。
 - **批量预测**：CSV 输入/输出；行级失败隔离（单行出错不中断批次）；取消保留已完成行；每行输出含模型版本、OOD 可信度、真值对照指标与耗时；GUI 与 CLI 双入口。
 - **统一日志与错误体系**：控制台 + 轮转文件日志；`DamageGuiError` 错误分层，GUI 只展示友好消息，完整 traceback 进日志文件。
-- **自动化测试**：236 个 unittest 用例（算法、指标、端到端管线、存储、任务状态机、批量、CLI、Web API、DPI/无头导入，以及 M3 消融/基线/基准/不确定度/追踪/生命周期/漂移检测框架与 Hypothesis 属性测试），全合成数据、无私有数据依赖。
+- **自动化测试**：覆盖算法、指标、端到端管线、存储、任务状态机、批量、CLI、Web API、无头导入，以及 M3 验证框架；全合成数据、无私有数据依赖。
 - **数值回归测试**：固定种子合成集上的黄金值对比（预测场 / POD 模态 / OOD 分级 / 核心指标）；容差依据双进程实测漂移（=0.0）设定，CI 双平台运行为最终权威；禁止为变绿随意放宽。
 - **Windows/Linux 双平台 CI**：`ruff → 单元+数值回归测试 → Windows PyInstaller 真实构建（校验 exe 产物）→ artifact 上传`；仅 tag 推送才发布 Release。
-- **跨平台桌面交付**：PyInstaller onedir 发布包，Qt 桌面入口 `damage-gui-qt`（`scripts/build_qt_release.sh` / `scripts/build_qt_release.bat`，产物命名 `DamageLab-<版本>-<平台>`）；旧 Tkinter 构建脚本保留为 legacy。
+- **跨平台桌面交付**：PyInstaller onedir 发布包，Qt 桌面入口 `damage-gui`（`scripts/build_qt_release.sh` / `scripts/build_qt_release.bat`，产物命名 `DamageLab-<版本>-<平台>`）；旧 Tkinter 构建脚本保留为 legacy。
 
 ## 完整技术栈（Technology Stack）
 
 | 层级 | 技术 | 用途 |
 |---|---|---|
 | 语言与运行时 | Python 3.10–3.14 | 科学计算、桌面端、CLI 与 Web 服务 |
-| 桌面 UI | PySide6（Qt 6）、QtAgg；Tkinter（legacy） | CAE 风格跨平台工作台：工具栏导航、深色科学视口、Inspector、活动面板 |
-| 科学计算 | NumPy、SciPy、Pandas、scikit-learn、joblib | 矩阵处理、滤波、插值、降阶、数据与模型持久化 |
+| 桌面 UI | PySide6（Qt 6）、QtAgg | CAE 风格跨平台工作台：工具栏导航、深色科学视口、Inspector、活动面板（Tk 桌面 2026-10 退役） |
+| 科学计算 | NumPy、SciPy、joblib | 矩阵处理、滤波、插值、降阶（POD 为自实现全 SVD）、数据与模型持久化 |
+| 表格与报告 | `damage_gui.data.table.Table`（内置） | 取代 pandas 的最小表格实现：带列序的字典列表 + CSV 读写 + 布尔掩码筛选 |
+| 可选依赖 | scikit-learn（`[legacy]`）、pandas（`[data-science]`） | 仅加载旧版 joblib 模型 / 运行消融实验脚本时需要；训练、预测、批量与 Web 服务已完全不需要 |
 | 降阶与代理模型 | POD/PCA、质心对齐 RBF | 高维毁伤场快速重建与空间位移解耦 |
 | 评估与可信度 | Raw/Smoothed 指标、IoU/Dice、OOD 凸包/邻域检测 | 数值精度、空间形状和外推风险评估 |
 | 可视化 | Matplotlib（QtAgg 后端）、PNG 高 DPI 渲染 | 热力图、误差场、瞄准优化结果 |
 | 服务端 | FastAPI、Pydantic、Uvicorn、httpx2 | 健康检查、模型、预测、批量、历史和结果 API |
 | Web 前端 | 原生 HTML / CSS / JavaScript | 无构建依赖的工程化浏览器工作台 |
 | 数据与追溯 | SQLite、CSV、JSON sidecar、轮转日志 | 模型、任务、结果、输入和版本追溯 |
-| 交付与部署 | PyInstaller onedir（Qt / legacy Tk）、Docker、Docker Compose、Nginx | macOS/Windows/Linux 桌面发布、非 root Web 容器、HTTPS 反代 |
+| 交付与部署 | PyInstaller onedir（Qt）、Docker、Docker Compose、Nginx | macOS/Windows/Linux 桌面发布、非 root Web 容器、HTTPS 反代 |
 | 质量保障 | unittest、ruff、GitHub Actions、数值黄金值回归 | 静态检查、双平台测试、构建和科学结果稳定性 |
 
 ## 产品界面与国际化
@@ -117,7 +122,7 @@ Storage / Files               SQLite 追溯库（models / jobs / prediction_resu
 
 更多工作台截图（验证 / 历史）见 [`examples/screenshots/qt/`](examples/screenshots/qt/)；桌面版使用说明见 [`docs/desktop.md`](docs/desktop.md)。旧 Tkinter 工作台截图保留在 `examples/screenshots/`（legacy 参考）。
 
-Web 端和桌面端共用 `DL` 品牌图标。图标资源位于 `src/damage_gui/gui/assets/` 与 `src/damage_gui/webapp/static/assets/`，Qt 打包（`scripts/damagelab-qt.spec`）会将桌面图标与 SVG 图标集一并打包。
+Web 端和桌面端共用 `DL` 品牌图标。桌面图标资源位于 `src/damage_gui/runtime/assets/`（2026-10 起从 `gui/assets/` 迁出，便于无 GUI 依赖的运行时包解析），Web 静态资源位于 `src/damage_gui/webapp/static/assets/`；Qt 打包（`scripts/damagelab-qt.spec`）会将桌面图标与 SVG 图标集一并打包。
 
 ## 模型追溯链（Model Traceability）
 
@@ -172,7 +177,8 @@ SQLite：models ← jobs(training) ← jobs(batch_prediction) ← prediction_res
 │   ├── visualization/
 │   │   └── plots.py           # 热力图与误差场渲染
 │   ├── gui/
-│   │   ├── main_window.py     # Tkinter 主窗口（TaskManager 后台任务）
+│   │   ├── runtime/            # 路径与图标解析（UI 中立）
+│   │   │   ├── paths.py        # app_base_dir / resource_path（PyInstaller 兼容）
 │   │   ├── i18n.py             # 中文/English 运行时翻译目录
 │   │   ├── assets/             # DL PNG/ICO 品牌图标
 │   │   ├── presentation.py    # 选项映射与指标展示文案
@@ -183,16 +189,15 @@ SQLite：models ← jobs(training) ← jobs(batch_prediction) ← prediction_res
 │       ├── routes/             # health / models / prediction / batch / history
 │       └── static/             # 无构建依赖的浏览器工作台与品牌资源
 ├── scripts/
-│   ├── build.bat              # 常规 PyInstaller 构建脚本
-│   ├── build_release.bat      # 轻量版 Windows 发布构建脚本
-│   ├── capture_gui_screenshots.py # 生成 README 使用的真实 GUI 截图
+│   ├── build_qt_release.bat   # Windows Qt 发布构建脚本
+│   ├── build_qt_release.sh    # macOS/Linux Qt 发布构建脚本
 │   ├── batch_predict.py       # 批量预测入口（CLI 兼容封装）
 │   ├── regen_regression_golden.py  # 数值回归黄金值再生成（受控）
 │   ├── generate_results.py    # 从本地数据复现示例结果
 │   ├── ablation_study.py      # 消融实验（降噪/对齐/POD 各自的贡献）
 │   ├── validation_study.py    # 五种结构化验证汇总表
 │   └── pod_sweep.py           # POD 模态数 K 扫描与性能对比
-├── tests/                     # 236 个用例（单元 / 端到端 / 数值回归 + 黄金值 + M3 验证框架）
+├── tests/                     # 单元 / 端到端 / 数值回归 + 黄金值 + M3 验证框架
 ├── docs/                      # 阶段验收报告与简历材料
 ├── .github/workflows/test.yml # CI（lint → 双平台测试 → Windows 构建 → artifact）
 ├── pyproject.toml             # 包元数据、依赖与 ruff 配置
@@ -229,14 +234,10 @@ damage-gui-qt
 
 完整使用说明与快捷键列表见 [`docs/desktop.md`](docs/desktop.md)。
 
-### 旧版桌面（Tkinter，legacy）
-
-```bash
-pip install -r requirements.txt
-PYTHONPATH=src python -m damage_gui.desktop
-```
-
-旧版工作台仍可运行（pip 入口 `damage-gui`），但新功能只在 Qt 版提供；建议所有桌面用户迁移到 `damage-gui-qt`。
+> **2026-10 起 Tk 桌面已整体退役**：旧版 `damage_gui.gui` 子树（2847 行
+  Tkinter 代码）删除、`damage-gui-tk` 入口与 `[desktop-tk]` extra 同步移除，
+  桌面包从此**只有 Qt 一份**。原 ``examples/screenshots/`` 下的 Tk 截图
+  作为历史参考保留。
 
 ### 命令行（CLI）
 
@@ -331,10 +332,13 @@ M3 阶段在本机 `dist/data` 真实仿真矩阵（F/M/P 各 120 工况，5 高
   Dice/IoU 更高。选择 `pod_rbf` 的依据是"质心定位最准 + 2.5 MB 产物 + 连续参数化 + OOD/
   不确定度护栏"的组合优势，而非任意单指标领先。
 
-- **pod_rbf 训练存在 ~1e-4 量级的非确定性（已知可复现性风险，本轮不修）**：生产尺寸下
-  sklearn PCA 走 randomized SVD 且未固定 random_state，同配置两次训练的第 4 位小数会波动
-  （如消融报告中 P 级 K=20 的 0.4460/0.4459 双值）。不影响本节任何结论；详见
-  [M3 验收报告 §7.9](docs/m3-acceptance-report.md)，修复计划在下一版本。
+- **pod_rbf 训练的非确定性已修复（原 ~1e-4 量级）**：原实现在生产尺寸下会走
+  `sklearn.decomposition.PCA` 的 randomized SVD 路径（`n_components < 0.8*min(X.shape)`
+  时自动切换）且未固定 `random_state`，同配置两次训练的第 4 位小数会波动（如消融报告中
+  P 级 K=20 的 0.4460/0.4459 双值）。现已替换为 `damage_gui.model.pod._PODBasis`
+  ——**确定性全 SVD + sklearn `svd_flip` 符号约定**，任何数据尺寸下都不再切换随机近似，
+  且核心算法层不再依赖 scikit-learn。数值回归黄金值比对偏差 1.1e-16（位级一致），
+  无需重新生成。详见 [M3 验收报告 §7.9](docs/m3-acceptance-report.md)。
 
 完整证据链见：[模型验证报告](docs/model-validation-report.md) ｜
 [消融实验](docs/ablation-study.md) ｜ [不确定度校准](docs/uncertainty-validation.md) ｜
@@ -429,7 +433,7 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 ```
 
-共 **236 个用例**（M2 冻结时 139 + M3 新增 97），全部基于合成数据（不依赖私有真实数据）：
+测试全部基于合成数据（不依赖私有真实数据）；本次本地审计为 **324 项 pytest 通过**：
 
 - 散布参数转换（CEP / REP-DEP → σ）、概率核归一化、零散布极限；相关散布核（ρ ≠ 0）与旋转椭圆协方差
 - Monte Carlo 期望毁伤效能 vs 解析卷积的一致性（独立/相关散布两组）
@@ -452,14 +456,17 @@ CI（`.github/workflows/test.yml`）四段流水线，失败可按 job 定位阶
 ```text
 push / PR
  ├─ lint   (Ubuntu)            ruff check
- ├─ test   (Windows + Ubuntu)  全部 236 个用例（含数值回归双平台对比）
+ ├─ test   (Windows + Ubuntu)  unittest 与数值回归双平台对比
+ ├─ qt-smoke (Ubuntu)          Qt、模型签名与表格回归
  └─ build  (Windows)           真实运行 PyInstaller 构建 → 校验 exe 产物 → 上传 artifact
      └─ release                仅 tag 推送时把构建产物挂到 GitHub Release
 ```
 
 ## 构建与发布
 
-Qt 桌面发布包（跨平台，产物命名 `DamageLab-<版本>-<平台>`）：
+### Qt 桌面发布包
+
+（跨平台，产物命名 `DamageLab-<版本>-<平台>`）
 
 ```bash
 # macOS / Linux
@@ -472,12 +479,7 @@ scripts\build_qt_release.bat
 
 产物位于 `release/DamageLab-<版本>-<平台>/`（macOS 为 `DamageLab.app` + README，Windows/Linux 为 onedir 目录 + README）。发布包含 Qt 桌面入口、SVG 图标集、应用图标与 Matplotlib 资源；不包含训练数据与 `.joblib` 模型，运行后自行选择。构建细节、已知平台问题与验收清单见 [`docs/desktop.md`](docs/desktop.md) 与 [`docs/release-checklist.md`](docs/release-checklist.md)。
 
-旧版 Tkinter 构建脚本（legacy，保留供兼容）：
-
-```powershell
-.\scripts\build.bat               # 常规构建
-.\scripts\build_release.bat       # 轻量版 Windows 发布构建
-```
+旧版 Tk 构建脚本已退役；桌面发布请使用上述 Qt 构建脚本。
 
 ## 当前限制与后续计划
 
@@ -485,4 +487,4 @@ scripts\build_qt_release.bat
 - OOD 检测为最近邻距离 + SVD 全局凸包 + 局部邻域凸包三层几何判定；F/M/P 三级阈值与自动邻居数已用真实结构化验证标定。局部凸包仍属于启发式支撑检查，数据网格改变后应重新运行校准；LOF/k-NN 密度比可作为后续补充。
 - 训练矩阵读取与预处理结果缓存可进一步细化，支撑更大工况库。
 - Qt 桌面发布包为 **未签名本地构建**（无代码签名证书）：macOS 首次启动需右键 → 打开；Windows SmartScreen 可能提示"更多信息 → 仍要运行"。平台验收状态：macOS 已实机验证；Windows 构建经 CI 验证（本阶段未做实机 GUI 人工验收）；Linux **NOT TESTED**（未实机验证，Wayland 下建议 `QT_QPA_PLATFORM=xcb`）。
-- Tkinter 旧版工作台（`damage-gui`）保留但不再演进；其 `gui/main_window.py` 布局代码维持现状，新功能仅在 Qt 版（`src/damage_gui/qt/`）实现。
+- ~~Tkinter 旧版工作台（`damage-gui`）保留但不再演进~~：2026-10 已整体退役；`gui/main_window.py` 及 `damage_gui.gui` 子树全部删除。

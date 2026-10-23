@@ -40,7 +40,7 @@ from damage_gui.qt.widgets.status_badge import StatusBadge
 
 if TYPE_CHECKING:
     from damage_gui.data.loader import Condition, DamageDataManager
-    from damage_gui.gui.i18n import Translator
+    from damage_gui.i18n import Translator
     from damage_gui.model.bundle import ModelBundle
     from damage_gui.services.prediction_service import PredictionResult, PredictionService
 
@@ -323,7 +323,7 @@ class PredictionPanel(QWidget):
     # ---------- prediction (unchanged logic) ----------
 
     def _current_condition(self) -> Condition:
-        from damage_gui.services.conditions import validate_condition
+        from damage_gui.data.conditions import validate_condition
 
         values = {
             "h": float(self.h_spin.value()),

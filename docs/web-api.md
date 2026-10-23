@@ -52,3 +52,16 @@ service; it does not duplicate prediction mathematics. `/api/history` reads
 the existing SQLite `jobs` traceability table, which now also permits
 `prediction` and `aim` records through a narrowly scoped compatibility
 migration for the existing `kind` constraint.
+
+## Authentication
+
+All API routes except `/api/health` require the shared workspace access token.
+Send `Authorization: Bearer <DAMAGE_GUI_API_TOKEN>`. Missing or invalid credentials
+return 401; a server without a configured token returns 503 for protected routes.
+The token must be 32..512 characters with no surrounding whitespace.
+
+`POST /api/session` with the bearer token creates an eight-hour HttpOnly session
+cookie for the Workbench and its image/download requests. `DELETE /api/session`
+clears it. State-changing browser requests must originate from the same origin.
+Protected responses are not cached. See deployment documentation for token
+rotation, signed model provisioning, retention, and storage limits.

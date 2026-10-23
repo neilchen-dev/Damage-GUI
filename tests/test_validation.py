@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import dataclasses
+import subprocess
 import sys
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -102,6 +104,72 @@ class ValidationSplitTests(unittest.TestCase):
     def test_unknown_mode_raises(self) -> None:
         with self.assertRaises(ValueError):
             make_splits(synthetic_records(), "unknown_mode", CONFIG)
+
+
+class RandomSplitNumpyFallbackTests(unittest.TestCase):
+    """sklearn 缺位时 numpy 降级路径必须与 sklearn ShuffleSplit 数值一致。
+
+    子进程内屏蔽 sklearn 导入后调用 make_splits，与父进程真实
+    ``train_test_split`` 的结果对比（golden 一致性守卫）。
+    """
+
+    def test_fallback_matches_sklearn_shuffle_split(self) -> None:
+        try:
+            from sklearn.model_selection import train_test_split
+        except ImportError:
+            self.skipTest("sklearn 不可用，无法生成对照 golden")
+
+        records = synthetic_records()
+        _, expected_test = train_test_split(
+            records,
+            test_size=CONFIG.test_size,
+            random_state=CONFIG.random_state,
+            shuffle=True,
+        )
+        expected_names = sorted(r.path.name for r in expected_test)
+
+        probe = textwrap.dedent(
+            """
+            import sys
+            from pathlib import Path
+
+            class _Blocker:
+                def find_spec(self, fullname, path=None, target=None):
+                    if fullname == "sklearn" or fullname.startswith("sklearn."):
+                        raise ImportError("blocked: " + fullname)
+                    return None
+
+            sys.meta_path.insert(0, _Blocker())
+            sys.path.insert(0, {src!r})
+
+            from damage_gui.config import CONFIG
+            from damage_gui.data.loader import Condition, DamageRecord
+            from damage_gui.model.validation import make_splits
+
+            records = [
+                DamageRecord("F", Condition(h=h, v=v, deg=deg),
+                             Path(f"synthetic_h{{h}}_v{{v}}_deg{{deg}}"))
+                for h in (1.0, 2.0, 3.0)
+                for v in (100.0, 200.0)
+                for deg in (10.0, 20.0)
+            ]
+            split = make_splits(records, "random", CONFIG)[0]
+            names = sorted(r.path.name for r in split.test)
+            assert "sklearn" not in sys.modules
+            print("FALLBACK_TEST_NAMES=" + ",".join(names))
+            """
+        )
+        src_dir = str(Path(__file__).resolve().parents[1] / "src")
+        result = subprocess.run(
+            [sys.executable, "-c", probe.format(src=src_dir)],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, msg=f"stderr: {result.stderr[-1000:]}")
+        marker = "FALLBACK_TEST_NAMES="
+        line = next(
+            out for out in result.stdout.splitlines() if out.startswith(marker)
+        )
+        self.assertEqual(line[len(marker):].split(","), expected_names)
 
 
 if __name__ == "__main__":

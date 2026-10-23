@@ -19,12 +19,12 @@ from damage_gui.batch.schema import (
     InvalidBatchRow,
 )
 from damage_gui.config import Config
+from damage_gui.data.export import export_rows_csv
 from damage_gui.data.loader import Condition, DamageDataManager, read_damage_matrix
 from damage_gui.data.preprocessing import evaluation_fields
 from damage_gui.errors import OperationCancelled, PredictionError
 from damage_gui.evaluation.metrics import metric_row
 from damage_gui.model.bundle import ModelBundle
-from damage_gui.services.export_service import export_rows_csv
 from damage_gui.storage.db import resolve_db_path
 from damage_gui.storage.repositories import (
     JobRepository,

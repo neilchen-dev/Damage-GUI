@@ -9,7 +9,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from damage_gui.aim_optimization import (
+from damage_gui.optimization.aim import (
     cep_to_sigma,
     compute_aim_value_field,
     find_best_aim_point,

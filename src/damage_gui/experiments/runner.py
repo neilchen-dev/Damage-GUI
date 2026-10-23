@@ -31,9 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import pandas as pd
-
 from damage_gui.config import Config
+from damage_gui.data.table import Table
 from damage_gui.model.validation import VALIDATION_MODES
 
 if TYPE_CHECKING:
@@ -125,7 +124,7 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _focus_metrics(accuracy_report: pd.DataFrame, config: Config) -> dict[str, float]:
+def _focus_metrics(accuracy_report: Table, config: Config) -> dict[str, float]:
     """从训练报告中抽取双口径核心指标与空间指标。"""
     out: dict[str, float] = {}
     focus_scope = f"damage_gt_{config.relative_error_threshold:.2f}"
@@ -412,7 +411,7 @@ def save_report(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     rows = [result.to_dict() for result in results]
-    frame = pd.DataFrame(rows)
+    frame = Table(rows)
 
     csv_path = out / f"{name}.csv"
     frame.to_csv(csv_path, index=False, encoding="utf-8-sig")

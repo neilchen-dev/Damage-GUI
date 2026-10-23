@@ -20,7 +20,6 @@ from __future__ import annotations
 import numpy as np
 from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import shift as ndi_shift
-from sklearn.decomposition import PCA
 
 from damage_gui.config import CONFIG, Config
 from damage_gui.data.loader import Condition
@@ -30,6 +29,72 @@ from damage_gui.model.rbf import (
     compute_alignment_window,
     make_rbf_interpolator,
 )
+
+
+class _PODBasis:
+    """POD / PCA 的轻量、确定性全 SVD 实现（替代 sklearn.decomposition.PCA）。
+
+    仅实现本项目所需的子集：
+
+    - ``fit_transform(X) -> (n_samples, k)``
+    - ``inverse_transform(Y) -> (n_samples, n_features)``
+    - ``explained_variance_ratio_``（长度 ``k`` 的 np.ndarray）
+
+    设计动机
+    --------
+    - sklearn PCA 在 ``n_components < 0.8 * min(X.shape)`` 时切换到
+      ``randomized`` SVD，跨 sklearn 版本输出不稳定，与本项目
+      "可追溯交付、跨版本一致数值"的承诺矛盾。
+    - 核心算法层不应依赖第三方 ML 全栈；本类 + ``numpy.linalg.svd``
+      已经足够。
+    - PyInstaller 桌面分发少 ~35MB（移除 scikit-learn 依赖）。
+
+    实现要点
+    --------
+    - 一律走 ``np.linalg.svd(..., full_matrices=False)``（LAPACK gesdd）。
+    - 复现 sklearn 1.x ``svd_flip`` 的符号约定：取变换结果每列
+      ``abs`` 最大元素的符号作为基向量翻转方向，保证跨 numpy / LAPACK
+      版本基向量符号一致。
+    """
+
+    def __init__(self, n_components: int) -> None:
+        self.n_components = int(n_components)
+        self.mean_: np.ndarray | None = None
+        self.components_: np.ndarray | None = None  # (k, n_features)
+        self.explained_variance_ratio_: np.ndarray | None = None  # (k,)
+
+    def fit_transform(self, X: np.ndarray) -> np.ndarray:
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim != 2:
+            raise ValueError("POD 基底要求 2-D 输入 (n_samples, n_features)")
+        n_samples = X.shape[0]
+        if n_samples < 1:
+            raise ValueError("POD 基底需要至少 1 个样本")
+        self.mean_ = X.mean(axis=0)
+        Xc = X - self.mean_
+        _, S, Vt = np.linalg.svd(Xc, full_matrices=False)
+        k = min(self.n_components, S.size)
+        Y = Xc @ Vt[:k].T  # (n_samples, k) —— 训练系数未做符号翻转
+        # 与 sklearn svd_flip 等价的符号约定：每列取 |Y| 最大元素的符号
+        # 翻转该列；保证基向量与逆变换在跨 numpy/LAPACK 版本下符号一致。
+        if k > 0:
+            max_abs_idx = np.argmax(np.abs(Y), axis=0)
+            signs = np.sign(Y[max_abs_idx, np.arange(k)])
+            signs = np.where(signs == 0, 1.0, signs)
+            self.components_ = Vt[:k] * signs[:, None]
+            Y = Y * signs
+        else:
+            self.components_ = np.zeros((0, X.shape[1]), dtype=np.float64)
+        ev_full = (S ** 2) / max(1, n_samples - 1)
+        total = float(ev_full.sum())
+        self.explained_variance_ratio_ = (ev_full / total)[:k]
+        return Y
+
+    def inverse_transform(self, Y: np.ndarray) -> np.ndarray:
+        if self.mean_ is None or self.components_ is None:
+            raise RuntimeError("POD 基底尚未 fit")
+        Y = np.asarray(Y, dtype=np.float64)
+        return Y @ self.components_ + self.mean_
 
 
 class PODRBFDamageField:
@@ -59,11 +124,23 @@ class PODRBFDamageField:
         self.cond_span: np.ndarray | None = None
         self.window_rows: tuple[int, int] | None = None
         self.window_cols: tuple[int, int] | None = None
-        self.pca: PCA | None = None
+        self.pod: _PODBasis | None = None  # 历史命名 pca 已被去除（避免与 sklearn 混用）
         self.coeff_interpolator: RBFInterpolator | None = None
         self.centroid_interpolator: RBFInterpolator | None = None
         self.explained_variance: float = 0.0
         self.n_components_used: int = 0
+
+    def __setstate__(self, state: dict) -> None:
+        """兼容 v2.2 旧版 joblib 模型：sklearn PCA 时代属性名为 ``pca``。
+
+        旧模型 unpickle 时状态字典里只有 ``pca``（sklearn.decomposition.PCA
+        实例，反序列化需要 ``damage-gui[legacy]``）。sklearn PCA 的
+        ``inverse_transform`` 与 ``_PODBasis`` 接口一致（``Y @ components_ +
+        mean_``），直接改名接管即可，数值不变。
+        """
+        if "pod" not in state and "pca" in state:
+            state["pod"] = state.pop("pca")
+        self.__dict__.update(state)
 
     @property
     def model_name(self) -> str:
@@ -91,16 +168,16 @@ class PODRBFDamageField:
             matrices, self.window_rows, self.window_cols, self.align, self._center
         )
 
-        # PCA 分量数受样本数与窗口像素数双重约束
+        # POD 分量数受样本数与窗口像素数双重约束
         n_comp = min(
             self.n_components,
             shapes.shape[0],
             shapes.shape[1],
         )
         n_comp = max(1, n_comp)
-        self.pca = PCA(n_components=n_comp)
-        coefficients = self.pca.fit_transform(shapes)
-        self.explained_variance = float(np.sum(self.pca.explained_variance_ratio_))
+        self.pod = _PODBasis(n_components=n_comp)
+        coefficients = self.pod.fit_transform(shapes)
+        self.explained_variance = float(np.sum(self.pod.explained_variance_ratio_))
         self.n_components_used = int(n_comp)
 
         normalized = self._normalize(conditions)
@@ -118,7 +195,7 @@ class PODRBFDamageField:
     def _reconstruct_window(self, query: np.ndarray) -> np.ndarray:
         """插值模态系数并做逆 POD 变换恢复窗口场。"""
         coefficients = self.coeff_interpolator(query)
-        return self.pca.inverse_transform(coefficients.reshape(1, -1))[0]
+        return self.pod.inverse_transform(coefficients.reshape(1, -1))[0]
 
     def predict_matrix(self, condition: Condition) -> np.ndarray:
         if self.coeff_interpolator is None:

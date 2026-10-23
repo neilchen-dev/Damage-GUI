@@ -136,6 +136,12 @@ class BatchWorkspace(QWidget):
             self.summary.setText(self.text('选择 CSV 文件，然后校验输入。','Select a CSV file, then validate input.'))
 
     def set_bundle(self, bundle):
+        if self.bundle is not bundle:
+            self.workflow.report = None
+            self.output = ''
+            self.output_label.clear()
+            for button in (self.open_button,self.folder_button,self.copy_button):
+                button.setEnabled(False)
         self.bundle = bundle
         meta = getattr(bundle, 'metadata', None)
         model_id=meta.model_id if meta else 'legacy'

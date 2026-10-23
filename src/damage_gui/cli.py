@@ -15,14 +15,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from damage_gui.data.loader import DamageDataManager
+from damage_gui.data.conditions import validate_condition
+
+# 惰性导入策略（与 app.py/desktop.py 一致）：顶层只保留轻量模块
+# （errors / logging_setup / data.conditions 均不依赖 numpy/scipy/
+# joblib），重科学栈在各子命令函数内按需拉起——``damage-gui-cli -h``
+# 与用法错误路径不再支付 0.4s+ 的 numpy/scipy/joblib 导入开销。
 from damage_gui.errors import DataValidationError, ModelLoadError
 from damage_gui.logging_setup import setup_logging
-from damage_gui.model.registry import load_model
-from damage_gui.services.batch_service import BatchService
-from damage_gui.services.conditions import validate_condition
-from damage_gui.services.export_service import export_matrix_csv
-from damage_gui.services.prediction_service import PredictionService
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -59,6 +59,8 @@ def _validate_condition(h: float, v: float, deg: float):
 
 
 def _cmd_info(args: argparse.Namespace) -> int:
+    from damage_gui.model.registry import load_model
+
     try:
         bundle = load_model(args.model)
     except ModelLoadError as exc:
@@ -84,6 +86,10 @@ def _cmd_info(args: argparse.Namespace) -> int:
 
 
 def _cmd_predict(args: argparse.Namespace) -> int:
+    from damage_gui.data.export import export_matrix_csv
+    from damage_gui.model.registry import load_model
+    from damage_gui.services.prediction_service import PredictionService
+
     try:
         bundle = load_model(args.model)
         condition = _validate_condition(args.h, args.v, args.deg)
@@ -123,6 +129,10 @@ def _cmd_predict(args: argparse.Namespace) -> int:
 
 
 def _cmd_batch(args: argparse.Namespace) -> int:
+    from damage_gui.data.loader import DamageDataManager
+    from damage_gui.model.registry import load_model
+    from damage_gui.services.batch_service import BatchService
+
     try:
         bundle = load_model(args.model)
         batch_service = BatchService()

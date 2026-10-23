@@ -19,6 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from damage_gui.config import Config
+from damage_gui.data.conditions import validate_condition
+from damage_gui.data.export import (
+    export_figure_png,
+    export_matrix_csv,
+    matrix_to_frame,
+)
 from damage_gui.data.loader import read_damage_matrix
 from damage_gui.data.preprocessing import evaluation_fields
 from damage_gui.errors import DataValidationError
@@ -26,12 +32,6 @@ from damage_gui.evaluation.metrics import metric_row
 from damage_gui.optimization.aim import optimize_aim
 from damage_gui.services.aim_service import AimService
 from damage_gui.services.batch_service import BatchService
-from damage_gui.services.conditions import validate_condition
-from damage_gui.services.export_service import (
-    export_figure_png,
-    export_matrix_csv,
-    matrix_to_frame,
-)
 from damage_gui.services.prediction_service import PredictionService
 from damage_gui.services.training_service import TrainingService
 from synthetic_data import make_service, make_synthetic_dataset

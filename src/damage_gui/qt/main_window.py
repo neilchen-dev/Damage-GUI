@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from damage_gui.qt.i18n import Translator, qt_text, trace_label
+from damage_gui.qt.panels.aim import AimWorkspace
 from damage_gui.qt.panels.batch import BatchWorkspace
 from damage_gui.qt.panels.history import HistoryWorkspace
 from damage_gui.qt.panels.model_registry import ModelRegistryWorkspace
@@ -140,11 +141,12 @@ class DamageQtMainWindow(QMainWindow):
         self.inspector.addWidget(self.validation_workspace.inspector)
         self.inspector.addWidget(self.training_workspace.inspector)
         self.inspector.addWidget(self.registry_workspace.inspector)
+        self.inspector.addWidget(self.aim_workspace.inspector)
         body.addWidget(self.inspector)
         outer.addLayout(body, 1)
 
         from damage_gui.qt.widgets.workspace import scroll_inspector
-        for widget in (self._prediction_panel,self.batch_workspace.inspector,self.validation_workspace.inspector,self.history_workspace.inspector,self.registry_workspace.inspector):
+        for widget in (self._prediction_panel,self.batch_workspace.inspector,self.validation_workspace.inspector,self.history_workspace.inspector,self.registry_workspace.inspector,self.aim_workspace.inspector):
             scroll_inspector(widget)
         self._connect()
         import logging
@@ -169,9 +171,9 @@ class DamageQtMainWindow(QMainWindow):
         self._act_details.triggered.connect(self._show_model_details)
         self._act_run = QAction(self)
         self._act_run.setShortcut(QKeySequence('F5'))
-        self._act_run.triggered.connect(self._prediction_run)
+        self._act_run.triggered.connect(self._run_current)
         self._act_reset = QAction(self)
-        self._act_reset.triggered.connect(lambda: self._field_view.buttons['Reset'].click())
+        self._act_reset.triggered.connect(lambda: self._active_field_view().buttons['Reset'].click())
         self._act_pan = QAction(self)
         self._act_pan.setCheckable(True)
         self._act_zoom = QAction(self)
@@ -179,7 +181,7 @@ class DamageQtMainWindow(QMainWindow):
         self._act_probe = QAction(self)
         self._act_probe.setCheckable(True)
         self._act_export = QAction(self)
-        self._act_export.triggered.connect(lambda: self._field_view.buttons['Export'].click())
+        self._act_export.triggered.connect(lambda: self._active_field_view().buttons['Export'].click())
         for action in (self._act_open, self._act_save, self._act_quit, self._act_run):
             self.addAction(action)
 
@@ -229,9 +231,12 @@ class DamageQtMainWindow(QMainWindow):
             self.pages.addWidget(workspace)
             self._pages[key] = workspace
 
+        self.aim_workspace = AimWorkspace(self.translator)
+        self.pages.addWidget(self.aim_workspace)
+        self._pages['aim'] = self.aim_workspace
+
         self._placeholder_glyphs = {}
         for key, _glyph, title, chinese, note in (
-            ('aim', '⊕', 'Aim', '瞄准优化', 'Aim optimization arrives in a later phase.'),
             ('settings', '⚙', 'Settings', '设置', 'Application settings arrive in a later phase.'),
         ):
             holder = QWidget()
@@ -288,8 +293,11 @@ class DamageQtMainWindow(QMainWindow):
         self.registry_workspace.load_requested.connect(self._prediction_open)
         self.registry_workspace.history_requested.connect(self._model_history)
         self.registry_workspace.message.connect(lambda text:self._show_status(text,'warning'))
+        self.aim_workspace.message.connect(self._show_status)
+        self.aim_workspace.completed.connect(self._aim_completed)
         self._activity.jobs.doubleClicked.connect(self._open_session_job)
         self._field_view.export_message.connect(self._show_status)
+        self.aim_workspace.view.export_message.connect(self._show_status)
         self.validation_workspace.export_message.connect(self._show_status)
         self.validation_workspace.comparison.export_message.connect(self._show_status)
         self._field_view.load_requested.connect(self._prediction_open)
@@ -297,8 +305,12 @@ class DamageQtMainWindow(QMainWindow):
         toggles = (('Pan', self._act_pan), ('Zoom', self._act_zoom),
                    ('Probe', self._act_probe))
         for key, action in toggles:
-            action.triggered.connect(lambda _=False, k=key: self._field_view.buttons[k].click())
-            self._field_view.buttons[key].toggled.connect(action.setChecked)
+            action.triggered.connect(lambda _=False, k=key: self._active_field_view().buttons[k].click())
+            for view in (self._field_view, self.aim_workspace.view):
+                view.buttons[key].toggled.connect(
+                    lambda checked, v=view, a=action: a.setChecked(checked)
+                    if v is self._active_field_view() else None
+                )
 
     # ---------- navigation ----------
 
@@ -307,8 +319,9 @@ class DamageQtMainWindow(QMainWindow):
             return
         self.pages.setCurrentWidget(self._pages[key])
         self.rail.set_current(key)
-        self.inspector.setCurrentIndex({'prediction':0,'batch':2,'history':3,'validation':4,'training':5,'models':6}.get(key,1))
+        self.inspector.setCurrentIndex({'prediction':0,'batch':2,'history':3,'validation':4,'training':5,'models':6,'aim':7}.get(key,1))
         self._update_commands()
+        self._sync_view_actions()
         if key == 'history':
             self.history_workspace.refresh()
         if key == 'models':
@@ -344,6 +357,7 @@ class DamageQtMainWindow(QMainWindow):
         QMessageBox.information(self, 'Model', '\n'.join(lines))
 
     def _on_model_loaded(self, bundle):
+        self.aim_workspace.set_prediction(None, None)
         name = getattr(bundle.model, 'model_name', type(bundle.model).__name__)
         self._act_save.setEnabled(True)
         self._act_details.setEnabled(True)
@@ -393,8 +407,15 @@ class DamageQtMainWindow(QMainWindow):
                                  display_threshold=config.display_threshold if config else 0.08,
                                  config=config)
         self._field_view.show_figure(figure)
+        self.aim_workspace.set_prediction(result.prediction, config)
 
         self._update_prediction_results(result)
+
+    def _aim_completed(self, result):
+        self._activity.set_results(self.aim_workspace.summary.text())
+        self._activity.result_kind = 'aim'
+        self._update_commands()
+        self._sync_view_actions()
 
     def _update_prediction_results(self, result):
         bundle = self._prediction_panel.bundle
@@ -435,12 +456,12 @@ class DamageQtMainWindow(QMainWindow):
         self.registry_workspace._controls()
         self.batch_workspace._controls()
         self.validation_workspace._controls()
-        for action in (self._act_open, self._act_run, self._act_save):
+        self.aim_workspace.set_busy(running or self.workflow.scientific_busy)
+        for action in (self._act_open, self._act_save):
             action.setEnabled(not running and not self.workflow.scientific_busy and (action is self._act_open or
                                                self._prediction_panel.bundle is not None))
-        for action in (self._act_reset, self._act_pan, self._act_zoom,
-                       self._act_probe, self._act_export):
-            action.setEnabled(self._field_view._has_result and not running)
+        self._update_commands()
+        self._sync_view_actions()
 
     def _trace_completion(self, completion):
         job, state = completion
@@ -553,7 +574,7 @@ class DamageQtMainWindow(QMainWindow):
             (self._act_save, '保存模型…', 'Save Model…'),
             (self._act_quit, '退出', 'Quit'),
             (self._act_details, '模型详情…', 'Model Details…'),
-            (self._act_run, '运行预测', 'Run Prediction'),
+            (self._act_run, '运行当前页', 'Run Current Action'),
             (self._act_reset, '重置视图', 'Reset View'),
             (self._act_pan, '平移', 'Pan'),
             (self._act_zoom, '缩放', 'Zoom'),
@@ -565,6 +586,10 @@ class DamageQtMainWindow(QMainWindow):
         self._on_running_changed(self._prediction_panel.is_running)
         self.rail.retranslate()
         self._field_view.retranslate(zh)
+        self.aim_workspace.retranslate()
+        if self._activity.result_kind == 'aim':
+            self._activity.set_results(self.aim_workspace.summary.text())
+            self._activity.result_kind = 'aim'
         self._prediction_panel.retranslate()
         self._update_model_header()
         self._activity.retranslate()
@@ -652,16 +677,30 @@ class DamageQtMainWindow(QMainWindow):
     def _current_key(self):
         return next((key for key,page in self._pages.items() if page is self.pages.currentWidget()),'')
 
+    def _active_field_view(self):
+        return self.aim_workspace.view if self._current_key() == 'aim' else self._field_view
+
+    def _sync_view_actions(self):
+        view = self._active_field_view()
+        available = self._current_key() in ('prediction', 'aim') and view._has_result and not self.workflow.scientific_busy
+        for action in (self._act_reset, self._act_pan, self._act_zoom,
+                       self._act_probe, self._act_export):
+            action.setEnabled(available)
+        for key, action in (('Pan', self._act_pan), ('Zoom', self._act_zoom),
+                            ('Probe', self._act_probe)):
+            action.setChecked(view.buttons[key].isChecked() if available else False)
+
     def _run_button(self):
-        return {'prediction':self._prediction_panel.predict_button,'batch':self.batch_workspace.run_button,'validation':self.validation_workspace.run_button,'training':self.training_workspace.run_button}.get(self._current_key())
+        return {'prediction':self._prediction_panel.predict_button,'batch':self.batch_workspace.run_button,'validation':self.validation_workspace.run_button,'training':self.training_workspace.run_button,'aim':self.aim_workspace.run_button}.get(self._current_key())
 
     def _update_commands(self):
         if not hasattr(self,'_act_current_run'):return
         button=self._run_button()
         self._act_current_run.setEnabled(button is not None and button.isEnabled() and not self.workflow.scientific_busy)
+        self._act_run.setEnabled(button is not None and button.isEnabled() and not self.workflow.scientific_busy)
         key=self._current_key()
         self._act_search.setEnabled(key in ('models','history','batch','validation'))
-        self._act_current_export.setEnabled((key=='prediction' and self._field_view._has_result) or (key=='validation' and self.validation_workspace.export_button.isEnabled()))
+        self._act_current_export.setEnabled((key=='prediction' and self._field_view._has_result) or (key=='validation' and self.validation_workspace.export_button.isEnabled()) or (key=='aim' and self.aim_workspace.view._has_result))
 
     def _run_current(self):
         button=self._run_button()
@@ -677,6 +716,7 @@ class DamageQtMainWindow(QMainWindow):
     def _export_current(self):
         key=self._current_key()
         if key=='prediction':self._field_view.buttons['Export'].click()
+        elif key=='aim':self.aim_workspace.view.buttons['Export'].click()
         elif key=='validation':self.validation_workspace.export()
 
 

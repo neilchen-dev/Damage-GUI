@@ -2,7 +2,7 @@
 
 Implemented on `qt-redesign`, preserving existing algorithms, OOD logic, schema, and the workbench layout.
 
-1. **Files.** Updated `qt/panels/prediction.py`, `qt/workflow.py`, `qt/main_window.py`, `qt/task_adapter.py`, `qt/widgets/activity_panel.py`, `qt/panels/history.py`, `qt/panels/batch.py`, `qt/i18n.py`, `storage/repositories.py`, and the existing Qt test's database isolation. Added `scripts/capture_qt_prediction_traceability.py`, `tests/test_qt_prediction_traceability.py`, and this report.
+1. **Files.** Updated `qt/panels/prediction.py`, `qt/workflow.py`, `qt/main_window.py`, `qt/task_adapter.py`, `qt/widgets/activity_panel.py`, `qt/panels/history.py`, `qt/panels/batch.py`, `qt/i18n.py`, `storage/repositories.py`, and the existing Qt test's database isolation. Added `scripts/archive/capture_qt_prediction_traceability.py`, `tests/test_qt_prediction_traceability.py`, and this report.
 2. **Lifecycle.** Single Prediction now runs through TaskManager rather than a separate QThread. The business task kind and stored job kind are `prediction`. The presentation immediately inserts PENDING; the worker records PENDING/RUNNING, calls the existing PredictionService with captured bundle/condition/config, and returns to TaskManager. Qt waits for terminal persistence reconciliation before publishing SUCCESS/FAILED/CANCELLED to Activity and ending the inspector's running state. Very fast jobs may traverse intermediate states between paints.
 3. **Persistence.** Each submission gets its own UUID, even for repeated identical inputs. `jobs.details_json` stores level/h/v/deg, confidence derived from the existing OOD report, and calculation duration. `prediction_results` stores the existing scalar result fields: condition, level, peak_intensity, damage_area_ratio, ood_level/distance, truth metrics where available, and duration_ms. No field matrix is written to SQLite. Job duration includes worker execution/persistence; result duration is PredictionService calculation time. TaskManager owns the terminal state, including a late cancellation. Cancellation does not interrupt the algorithm; it is checked at service boundaries.
 4. **Repositories.** Reused JobRepository and PredictionResultRepository's existing insertion/read APIs. Model upsert now uses ON CONFLICT UPDATE rather than replacement, preserving a known artifact_path when another frontend upserts metadata without a path. This avoids destroying model provenance during Batch recording. Job history ordering is now `created_at DESC, id DESC`; filters and pagination remain SQL-level. No migration was added.
@@ -19,6 +19,6 @@ Implemented on `qt-redesign`, preserving existing algorithms, OOD logic, schema,
 Reproduce:
 
 ```sh
-QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_qt_prediction_traceability.py
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/archive/capture_qt_prediction_traceability.py
 .venv/bin/python -m pytest -q
 ```

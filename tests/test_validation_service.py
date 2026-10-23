@@ -16,7 +16,16 @@ def test_observer_preserves_existing_metrics(validation_bundle):
     config=bundle.resolved_config()
     result=ValidationService().run(bundle,str(path),config,'leave_h_out',held_out_value=3.)
     reference=make_service(path).train_bundle('F',validation_mode='leave_h_out',held_out_value=3.)
-    pd.testing.assert_frame_equal(pd.DataFrame(result.accuracy),reference.accuracy_report)
+    import pandas as _pd
+
+    from damage_gui.data.table import Table as _Table
+    _actual = _pd.DataFrame(result.accuracy)
+    _expected = (
+        _pd.DataFrame(reference.accuracy_report.to_dict("records"))
+        if isinstance(reference.accuracy_report, _Table)
+        else reference.accuracy_report
+    )
+    pd.testing.assert_frame_equal(_actual, _expected)
     assert len(result.samples)==9
     assert all(row['outside_global_support'] for row in result.samples)
 

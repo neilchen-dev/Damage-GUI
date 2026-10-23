@@ -71,6 +71,7 @@ class ModelManager:
         default_model_id: str | None = None,
         loader: Callable[[Path], Any] | None = None,
         initial_bundles: Mapping[str, Any] | None = None,
+        max_cached_models: int = 2,
     ) -> None:
         self.model_dir = Path(model_dir).resolve() if model_dir is not None else None
         self.default_model_id = (
@@ -80,7 +81,10 @@ class ModelManager:
         self._initial_bundles = dict(initial_bundles or {})
         for model_id in self._initial_bundles:
             _safe_id(model_id, kind="model")
-        self._cache: dict[str, Any] = {}
+        self.max_cached_models = int(max_cached_models)
+        if self.max_cached_models <= 0:
+            raise ValueError("Model cache size must be positive")
+        self._cache: OrderedDict[str, Any] = OrderedDict()
         self._lock = threading.RLock()
 
     @staticmethod
@@ -170,7 +174,12 @@ class ModelManager:
         descriptor = self.get_descriptor(resolved_id)
         with self._lock:
             if resolved_id in self._cache:
+                self._cache.move_to_end(resolved_id)
                 return resolved_id, self._cache[resolved_id], descriptor
+            # Release the least-recently-used cache reference before loading
+            # another artifact, rather than retaining both models during load.
+            while len(self._cache) >= self.max_cached_models:
+                self._cache.popitem(last=False)
             if resolved_id in self._initial_bundles:
                 bundle = self._initial_bundles[resolved_id]
             elif descriptor.path is not None:
@@ -384,7 +393,7 @@ class ResultStore:
         cutoff = datetime.now(timezone.utc).timestamp() - self.retention_days * 86400
         try:
             for child in root.iterdir():
-                if child.is_dir() and child.stat().st_mtime < cutoff:
+                if not child.is_symlink() and child.is_dir() and child.stat().st_mtime < cutoff:
                     shutil.rmtree(child, ignore_errors=True)
         except OSError:
             logger.warning("Unable to clean old web result artifacts")

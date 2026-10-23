@@ -1,9 +1,11 @@
 """模型注册表：joblib 模型包 + JSON 元数据 sidecar 的保存/加载与校验。"""
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -12,6 +14,7 @@ import joblib
 from damage_gui.errors import ModelLoadError
 from damage_gui.model.bundle import ModelBundle
 from damage_gui.model.metadata import ModelMetadata, sidecar_path
+from damage_gui.model.signing import digest, signature_path, verify_model
 
 logger = logging.getLogger("damage_gui.registry")
 
@@ -19,16 +22,21 @@ logger = logging.getLogger("damage_gui.registry")
 def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True) -> Path:
     """Serialize fully before publishing; registry callers reject existing files.
 
-    Each file is atomic, but the pair is not a filesystem transaction. Metadata is
+    Each file is atomic, but the three files are not a filesystem transaction. Metadata is
     published first. Default replacement preserves historical Save As behavior;
     registration uses atomic no-clobber hard links on the same filesystem.
     """
     path = Path(path)
     metadata = getattr(bundle, "metadata", None)
     sidecar = sidecar_path(path)
-    if not overwrite and (path.exists() or sidecar.exists()):
+    signature = signature_path(path)
+    if not overwrite and (path.exists() or sidecar.exists() or signature.exists()):
         raise FileExistsError(f"Model artifact already exists: {path.name}")
     temporary, published = [], []
+    sidecar_backup = None
+    signature_backup = None
+    sidecar_changed = False
+    signature_changed = False
     try:
         fd, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         os.close(fd)
@@ -39,6 +47,25 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
         # Errno 9（POSIX 允许对只读 fd fsync，故仅在 Windows CI 暴露）。
         with model_tmp.open("rb+") as stream:
             os.fsync(stream.fileno())
+        fd, name = tempfile.mkstemp(prefix=f".{signature.name}.", dir=path.parent)
+        signature_tmp = Path(name)
+        temporary.append(signature_tmp)
+        with os.fdopen(fd, "w", encoding="ascii") as stream:
+            stream.write(digest(model_tmp.read_bytes(), create_key=True))
+            stream.flush()
+            os.fsync(stream.fileno())
+        if overwrite and sidecar.exists():
+            fd, name = tempfile.mkstemp(prefix=f".{sidecar.name}.backup.", dir=path.parent)
+            os.close(fd)
+            sidecar_backup = Path(name)
+            temporary.append(sidecar_backup)
+            shutil.copy2(sidecar, sidecar_backup)
+        if overwrite and signature.exists():
+            fd, name = tempfile.mkstemp(prefix=f".{signature.name}.backup.", dir=path.parent)
+            os.close(fd)
+            signature_backup = Path(name)
+            temporary.append(signature_backup)
+            shutil.copy2(signature, signature_backup)
         if metadata is not None:
             fd, name = tempfile.mkstemp(prefix=f".{sidecar.name}.", dir=path.parent)
             meta_tmp = Path(name)
@@ -49,9 +76,19 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
                 os.fsync(stream.fileno())
             if overwrite:
                 os.replace(meta_tmp, sidecar)
+                sidecar_changed = True
             else:
                 os.link(meta_tmp, sidecar)
                 published.append(sidecar)
+        elif overwrite and sidecar.exists():
+            sidecar.unlink()
+            sidecar_changed = True
+        if overwrite:
+            os.replace(signature_tmp, signature)
+            signature_changed = True
+        else:
+            os.link(signature_tmp, signature)
+            published.append(signature)
         if overwrite:
             os.replace(model_tmp, path)
         else:
@@ -60,6 +97,16 @@ def save_model(bundle: ModelBundle, path: str | Path, *, overwrite: bool = True)
     except Exception:
         for artifact in published:
             artifact.unlink(missing_ok=True)
+        if sidecar_changed:
+            if sidecar_backup is not None:
+                shutil.copy2(sidecar_backup, sidecar)
+            else:
+                sidecar.unlink(missing_ok=True)
+        if signature_changed:
+            if signature_backup is not None:
+                shutil.copy2(signature_backup, signature)
+            else:
+                signature.unlink(missing_ok=True)
         raise
     finally:
         for artifact in temporary:
@@ -106,7 +153,20 @@ def load_model(path: str | Path) -> ModelBundle:
     if not model_path.is_file():
         raise ModelLoadError(f"模型文件不存在: {model_path.name}")
     try:
-        bundle = joblib.load(model_path)
+        content = model_path.read_bytes()
+        verify_model(model_path, content)
+        bundle = joblib.load(io.BytesIO(content))
+    except ModelLoadError:
+        raise
+    except ModuleNotFoundError as exc:
+        # 旧版 joblib 模型可能依赖 sklearn/pickle 时不在的第三方模块
+        missing = getattr(exc, "name", "未知模块")
+        raise ModelLoadError(
+            f"模型文件 {model_path.name} 依赖缺失模块: {missing}。\n"
+            "若为旧版模型，请安装 legacy 依赖后重试:\n"
+            "    pip install 'damage-gui[legacy]'\n"
+            "或重新训练生成当前格式的模型。"
+        ) from exc
     except Exception as exc:  # noqa: BLE001 —— 反序列化失败统一转为可读错误
         raise ModelLoadError(
             f"模型文件损坏或与当前软件版本不兼容: {model_path.name}"

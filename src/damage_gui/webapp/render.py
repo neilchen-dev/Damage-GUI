@@ -32,7 +32,7 @@ def prediction_png(item: StoredPrediction) -> bytes:
 
 def prediction_csv(item: StoredPrediction) -> bytes:
     """Reuse the established coordinate-labelled matrix export semantics."""
-    from damage_gui.services.export_service import matrix_to_frame
+    from damage_gui.data.export import matrix_to_frame
 
     buffer = BytesIO()
     matrix_to_frame(item.result.prediction, item.config).to_csv(

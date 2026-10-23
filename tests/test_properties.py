@@ -26,13 +26,13 @@ sys.path.insert(0, str(ROOT / "src"))
 from damage_gui.config import CONFIG  # noqa: E402
 from damage_gui.data.loader import Condition  # noqa: E402
 from damage_gui.data.preprocessing import roi_mask_for_shape  # noqa: E402
-from damage_gui.experiments.baselines import NearestNeighborField  # noqa: E402
 from damage_gui.experiments.uncertainty import (  # noqa: E402
     UncertaintyEstimator,
     _spearman,
     calibration_bins,
     sample_roi_mae,
 )
+from damage_gui.model.baselines import NearestNeighborField  # noqa: E402
 from damage_gui.model.rbf import RBFDamageField  # noqa: E402
 
 SHAPE = (16, 16)
@@ -168,12 +168,12 @@ class CalibrationBinsPropertyTests(unittest.TestCase):
     def test_sample_conservation_and_bounds(self, pair, n_bins: int) -> None:
         estimates, errors = pair
         bins = calibration_bins(estimates, errors, n_bins)
-        self.assertEqual(int(bins["n"].sum()), len(estimates))
+        self.assertEqual(int(sum(bins["n"])), len(estimates))
         self.assertLessEqual(len(bins), max(n_bins, 1))
-        self.assertGreaterEqual(bins["mean_estimate"].min(), estimates.min() - 1e-9)
-        self.assertLessEqual(bins["mean_estimate"].max(), estimates.max() + 1e-9)
-        self.assertGreaterEqual(bins["mean_error"].min(), errors.min() - 1e-9)
-        self.assertLessEqual(bins["mean_error"].max(), errors.max() + 1e-9)
+        self.assertGreaterEqual(min(bins["mean_estimate"]), estimates.min() - 1e-9)
+        self.assertLessEqual(max(bins["mean_estimate"]), estimates.max() + 1e-9)
+        self.assertGreaterEqual(min(bins["mean_error"]), errors.min() - 1e-9)
+        self.assertLessEqual(max(bins["mean_error"]), errors.max() + 1e-9)
 
     @given(st.floats(min_value=0.0, max_value=1.0, allow_nan=False, allow_infinity=False),
            st.integers(min_value=2, max_value=80))

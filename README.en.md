@@ -41,15 +41,17 @@ The implementation also supports structured validation (random, leave-h, leave-v
 | Layer | Technology | Role |
 |---|---|---|
 | Runtime | Python 3.10–3.14 | Scientific computing, desktop, CLI, and Web service |
-| Desktop UI | PySide6 (Qt 6), QtAgg; Tkinter (legacy) | CAE-style cross-platform workbench: tool-rail navigation, dark scientific viewport, inspector, activity panel |
-| Scientific computing | NumPy, SciPy, Pandas, scikit-learn, joblib | Arrays, filtering, interpolation, reduction, data, and persistence |
+| Desktop UI | PySide6 (Qt 6), QtAgg | CAE-style cross-platform workbench: tool-rail navigation, dark scientific viewport, inspector, activity panel (Tk desktop retired 2026-10) |
+| Scientific computing | NumPy, SciPy, joblib | Arrays, filtering, interpolation, reduction (POD is a self-contained full SVD), data, and persistence |
+| Tables and reports | `damage_gui.data.table.Table` (built in) | Minimal pandas replacement: ordered dict rows + CSV read/write + boolean-mask filtering |
+| Optional | scikit-learn (`[legacy]`), pandas (`[data-science]`) | Only for loading legacy joblib models / running ablation scripts; training, prediction, batch and the web service no longer need them |
 | Surrogate model | POD/PCA, centroid alignment, RBF | Reduced-order damage-field reconstruction |
 | Evaluation | RMSE, MAE, R², relative error, IoU, Dice, OOD geometry | Numerical, spatial, and extrapolation-risk assessment |
 | Visualization | Matplotlib (QtAgg backend), high-DPI PNG rendering | Damage, prediction, error, and aim-point views |
 | Service | FastAPI, Pydantic, Uvicorn, httpx2 | Health, model, prediction, batch, history, and result APIs |
 | Web UI | Native HTML, CSS, and JavaScript | No-build browser workbench |
 | Traceability | SQLite, CSV, JSON sidecars, rotating logs | Model, job, result, input, and version history |
-| Delivery | PyInstaller onedir (Qt / legacy Tk), Docker, Docker Compose, Nginx | macOS/Windows/Linux desktop release and reverse-proxied server deployment |
+| Delivery | PyInstaller onedir (Qt), Docker, Docker Compose, Nginx | macOS/Windows/Linux desktop release and reverse-proxied server deployment |
 | Quality | unittest, ruff, GitHub Actions, numerical golden values | Linting, cross-platform tests, builds, and regression control |
 
 ## Screenshots and branding
@@ -64,7 +66,7 @@ These are screenshots captured from the current running Qt desktop application, 
 
 More workbench screenshots (validation / history / Chinese UI / 1280×720) are kept in [`examples/screenshots/qt/`](examples/screenshots/qt/). Desktop usage instructions are in [`docs/desktop.md`](docs/desktop.md); legacy Tkinter screenshots remain in `examples/screenshots/` for reference.
 
-The `DL` product mark is shared by the desktop and Web interfaces. Source assets are kept in `src/damage_gui/gui/assets/` and `src/damage_gui/webapp/static/assets/`; the Qt packaging spec (`scripts/damagelab-qt.spec`) bundles the desktop icon and the SVG icon set into the release package.
+The `DL` product mark is shared by the desktop and Web interfaces. Desktop icon assets live in `src/damage_gui/runtime/assets/` (moved from `gui/assets/` on 2026-10 so the runtime package has no GUI dependency); Web static assets live in `src/damage_gui/webapp/static/assets/`. The Qt packaging spec (`scripts/damagelab-qt.spec`) bundles the desktop icon and the SVG icon set into the release package.
 
 ## Quick start
 
@@ -90,14 +92,7 @@ Basic workflow after launch:
 
 Desktop data (SQLite trace DB, logs, reports) is written to the platform user-data directory (macOS `~/Library/Application Support/DamageLab`, Windows `%APPDATA%\DamageLab`, Linux `~/.local/share/DamageLab`), never the install directory. Common shortcuts: `Cmd/Ctrl+O` open model, `Cmd/Ctrl+R` run current page, `Cmd/Ctrl+F` search, `Cmd/Ctrl+E` export, `Cmd/Ctrl+L` logs, `F5` predict. See [`docs/desktop.md`](docs/desktop.md) for the full guide.
 
-### Legacy desktop (Tkinter)
-
-```bash
-pip install -r requirements.txt
-PYTHONPATH=src python -m damage_gui.desktop
-```
-
-The legacy workbench still runs (pip entry point `damage-gui`) but new features land only in the Qt build; all desktop users should migrate to `damage-gui-qt`.
+> **Tk desktop retired 2026-10**: the legacy `damage_gui.gui` subtree (2,847 lines of Tkinter code) was removed along with the `damage-gui-tk` entry point and the `[desktop-tk]` extra. The desktop package now contains **only** the Qt build; the historical Tk screenshots in `examples/screenshots/` stay as reference.
 
 ### CLI
 
@@ -190,11 +185,14 @@ kernel), out-of-fold metrics under random 80/20 holdout:**
   production R²(sm) and `nn` scores higher Dice/IoU. `pod_rbf` is chosen for the combination
   of best centroid accuracy + 2.5 MB artifact + continuous parameterization + OOD/uncertainty
   guards, not for leading any single metric.
-- **pod_rbf training carries ~1e-4-magnitude nondeterminism (known reproducibility risk,
-  deferred to the next release)**: at production data sizes, sklearn PCA selects randomized
-  SVD with an unfixed `random_state`, so two same-config trainings can differ in the fourth
-  decimal place (e.g. the P-level K=20 pair 0.4460/0.4459 in the ablation study). No
-  conclusion in this section is affected; see
+- **pod_rbf training nondeterminism (previously ~1e-4) is fixed**: the old implementation
+  fell back to `sklearn.decomposition.PCA`'s *randomized* SVD at production sizes (auto-selected
+  when `n_components < 0.8*min(X.shape)`) with an unfixed `random_state`, so two same-config
+  trainings could differ in the fourth decimal place (e.g. the P-level K=20 pair 0.4460/0.4459
+  in the ablation study). It is replaced by `damage_gui.model.pod._PODBasis` — a **deterministic
+  full SVD with sklearn's `svd_flip` sign convention**, which never switches to a randomized
+  approximation and removes scikit-learn from the core algorithm layer. Numerical regression
+  goldens match to 1.1e-16 (bit-level), so no golden regeneration was required. See
   [M3 acceptance report §7.9](docs/m3-acceptance-report.md).
 
 Full evidence chain: [model validation report](docs/model-validation-report.md) |
@@ -216,19 +214,14 @@ scripts\build_qt_release.bat
 
 Artifacts land in `release/DamageLab-<version>-<platform>/` (macOS: `DamageLab.app` + README; Windows/Linux: onedir + README). The package bundles the Qt entry point, the SVG icon set, the app icon, and Matplotlib resources; it does not include training data or `.joblib` models. Build details, known platform issues, and the acceptance checklist are in [`docs/desktop.md`](docs/desktop.md) and [`docs/release-checklist.md`](docs/release-checklist.md).
 
-Legacy Tkinter build scripts (kept for compatibility):
-
-```powershell
-.\scripts\build.bat               # regular build
-.\scripts\build_release.bat       # lightweight Windows release build
-```
+The legacy Tk build scripts are retired. Use the Qt release scripts above for desktop packages.
 
 ## Current limitations
 
 - Aim-point optimization defines the dispersion ellipse in the target normal plane (A1/A2 assumption); the ground-plane → normal-plane projection for oblique impact has not been modeled yet.
 - OOD detection is a three-layer geometric check (nearest-neighbor distance + SVD global hull + local neighborhood hull) with F/M/P thresholds calibrated on real structured validation; the local hull remains heuristic and should be recalibrated when the data grid changes.
 - Qt desktop packages are **unsigned local builds** (no code-signing certificate): on macOS the first launch needs right-click → Open; Windows SmartScreen may show "More info → Run anyway". Platform acceptance status: macOS verified on real hardware; Windows build verified in CI (no manual on-hardware GUI acceptance this phase); Linux **NOT TESTED** (on Wayland prefer `QT_QPA_PLATFORM=xcb`).
-- The Tkinter workbench (`damage-gui`) is retained but no longer evolves; new features are implemented only in the Qt build (`src/damage_gui/qt/`).
+- ~~The Tkinter workbench (`damage-gui`) is retained but no longer evolves~~: retired on 2026-10 along with the entire `damage_gui.gui` subtree and `gui/main_window.py`.
 
 ## License
 

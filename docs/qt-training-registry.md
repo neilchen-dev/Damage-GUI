@@ -20,11 +20,11 @@
 16. **known limitations**：未注册 draft bundle 仅保留于当前会话内存；重启后 History 保留指标/metadata/CSV，但不能恢复未注册权重。核心默认 Random 训练交付训练子集模型，没有另加全量训练模式。原取消边界不能中断单次 PCA/RBF 求解。文件主文件/sidecar 各自完整 fsync 后原子发布，两个文件及两套 SQLite 并非一个跨资源事务；中断可能留下未正式注册的完整文件，同 ID 重试会校验并复用，已正式注册的 ID 仍拒绝重复。自动异常退出任务协调、registry 数据库整合/迁移与历史权重恢复未加入。持久 ACTIVE 按等级保存，启动不会自动选择其中一份为应用当前模型。保留旧的 Load Existing Model/Save As 入口，其文件对话框之后的历史加载/保存仍为同步；新 registry 激活/注册和全部训练/检查均为后台。code_commit 仍为现有 HEAD SHA，不代表这些未提交修改的完整代码快照。只做 macOS offscreen GUI 验收，未手动测试 Windows/Linux 原生窗口。
 17. **Phase 2.4 proposal**：优先做启动时中断任务协调、draft artifact 的可恢复保存与生命周期管理、历史结果分页/导出，以及模型跨文件/跨数据库写入的恢复流程。再将旧 Load/Save 入口统一迁入后台。保持 Aim、AutoML、模型排行和自动调参不在该范围。
 
-关键新增文件：`services/dataset_service.py`、`services/model_registry_service.py`、`qt/training_workflow.py`、`qt/panels/training.py`、`qt/panels/model_registry.py`、两枚 SVG 图标、`scripts/capture_qt_training.py`、`tests/test_training_registry.py`、`tests/test_qt_training.py`。更新了 loader、TrainingService、registry、metadata、repositories、Qt main/workflow/history/i18n/theme/rail、共享翻译和工作台导航测试。
+关键新增文件：`services/dataset_service.py`、`services/model_registry_service.py`、`qt/training_workflow.py`、`qt/panels/training.py`、`qt/panels/model_registry.py`、两枚 SVG 图标、`scripts/archive/capture_qt_training.py`、`tests/test_training_registry.py`、`tests/test_qt_training.py`。更新了 loader、TrainingService、registry、metadata、repositories、Qt main/workflow/history/i18n/theme/rail、共享翻译和工作台导航测试。
 
 复现：
 
 ```sh
-QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/capture_qt_training.py
+QT_QPA_PLATFORM=offscreen .venv/bin/python scripts/archive/capture_qt_training.py
 .venv/bin/python -m pytest -q
 ```
