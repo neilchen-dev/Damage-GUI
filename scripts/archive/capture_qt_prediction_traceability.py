@@ -80,12 +80,13 @@ def main(output):
         shot('prediction_success_activity_en')
         history=detail(high_id)
         try:
-            wait(lambda:'training_data_hash' in history.detail.toPlainText(),timeout=10)
+            wait(lambda:'training_data_hash' in history.detail.toPlainText(),timeout=30)
         except AssertionError:
             # CI-only flake diagnostics: dump persisted rows + rendered text.
             with closing(sqlite3.connect(db)) as connection:
+                connection.row_factory=sqlite3.Row
                 print('DIAG jobs:',[dict(row) for row in connection.execute('SELECT id,kind,status,model_id FROM jobs')])
-                print('DIAG models:',[dict(row) for row in connection.execute('SELECT id,artifact_path FROM models')])
+                print('DIAG models:',[dict(row) for row in connection.execute('SELECT id,training_data_hash,artifact_path FROM models')])
             print('DIAG detail:',history.detail.toPlainText())
             raise
         shot('prediction_high_history_en')
