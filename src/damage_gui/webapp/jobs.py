@@ -108,8 +108,16 @@ class WebJobManager:
             max_workers=max(1, int(max_workers)),
             thread_name_prefix="damage-gui-web-batch",
         )
-        self._cleanup_old_batch_artifacts()
-        self._recover_orphaned_jobs()
+        self._initialized = False
+
+    def initialize(self) -> None:
+        """Clean artifacts and recover interrupted jobs after runtime setup."""
+        with self._lock:
+            if self._initialized:
+                return
+            self._cleanup_old_batch_artifacts()
+            self._recover_orphaned_jobs()
+            self._initialized = True
 
     def submit(self, *, model_id: str, parsed: Any, input_source: str) -> dict[str, Any]:
         with self._lock:

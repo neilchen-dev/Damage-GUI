@@ -159,6 +159,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_application):
+        await asyncio.to_thread(web_jobs.initialize)
         cleanup = asyncio.create_task(cleanup_results())
         try:
             yield

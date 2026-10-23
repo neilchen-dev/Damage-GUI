@@ -27,6 +27,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -54,8 +55,7 @@ def main(outdir: Path, hidpi: bool = False) -> None:
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ["DAMAGE_GUI_DB"] = str(outdir / f"acceptance_{uuid.uuid4().hex[:6]}.sqlite")
-    os.environ.setdefault("DAMAGE_GUI_HOME", str(outdir / "cold_home"))
-    Path(os.environ["DAMAGE_GUI_HOME"]).mkdir(parents=True, exist_ok=True)
+    os.environ["DAMAGE_GUI_HOME"] = tempfile.mkdtemp(prefix="cold_home_", dir=outdir)
 
     from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
@@ -77,6 +77,10 @@ def main(outdir: Path, hidpi: bool = False) -> None:
     app.processEvents()
     startup_ms = (time.perf_counter() - t0) * 1000
     RESULTS["timings"]["startup_window_ms"] = round(startup_ms)
+    from matplotlib.figure import Figure
+    gc.collect()
+    baseline_figures = sum(isinstance(obj, Figure) for obj in gc.get_objects())
+    RESULTS["memory"]["baseline_figure_objects"] = baseline_figures
 
     check("cold-start: window constructed", True, f"{startup_ms:.0f} ms")
     check("cold-start: no model empty state",
@@ -110,8 +114,11 @@ def main(outdir: Path, hidpi: bool = False) -> None:
     w.showNormal()
 
     if hidpi:  # 2x pass only needs visual evidence
+        w.resize(1280, 720)
+        w._reset_layout()
+        app.processEvents()
         dpr = w.devicePixelRatioF()
-        shot(w, "91_hidpi_prediction")
+        shot(w, "91_hidpi_layout")
         check("hidpi: devicePixelRatio == 2", abs(dpr - 2.0) < 0.01, f"dpr={dpr}")
         _summary(outdir, suffix)
         return
@@ -292,7 +299,6 @@ def main(outdir: Path, hidpi: bool = False) -> None:
 
     # ---------- 9/10. performance + memory smoke ----------
     rss_start = rss_kb()
-    from matplotlib.figure import Figure
     for i in range(20):
         panel.h_spin.setValue(1 + (i % 3))
         w._run_current()
@@ -311,15 +317,14 @@ def main(outdir: Path, hidpi: bool = False) -> None:
     gc.collect()
     rss_end = rss_kb()
     figures = [o for o in gc.get_objects() if isinstance(o, Figure)]
-    live_canvases = 1  # field view canvas
     RESULTS["memory"]["rss_start_kb"] = rss_start
     RESULTS["memory"]["rss_end_kb"] = rss_end
     RESULTS["memory"]["rss_growth_mb"] = round((rss_end - rss_start) / 1024, 1)
     RESULTS["memory"]["live_figure_objects"] = len(figures)
     check("memory: RSS growth bounded", rss_end - rss_start < 400 * 1024,
           f"+{(rss_end - rss_start) / 1024:.0f} MB")
-    check("plot lifecycle: no leaked figures", len(figures) <= live_canvases + 3,
-          f"{len(figures)} live Figure objects")
+    check("plot lifecycle: no leaked figures", len(figures) <= baseline_figures,
+          f"baseline={baseline_figures}, final={len(figures)} Figure objects")
 
     # language switch smoke (translations intact)
     w.translator.set_language("zh")
@@ -355,5 +360,9 @@ if __name__ == "__main__":
         main(out, hidpi=True)
     else:
         main(out, hidpi=False)
+        if RESULTS["verdict"] != "PASS":
+            sys.exit(1)
         env = dict(os.environ, QT_SCALE_FACTOR="2", QT_AUTO_SCREEN_SCALE_FACTOR="0")
         subprocess.run([sys.executable, __file__, str(out), "--hidpi"], check=True, env=env)
+    if RESULTS["verdict"] != "PASS":
+        sys.exit(1)
